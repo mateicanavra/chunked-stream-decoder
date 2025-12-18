@@ -126,7 +126,9 @@ function buildBenches(encoded: string, fragmentsFromFile: string[] | null, skipW
   benches.push({ name: "single fragment (full buffer)", fragments: fragment(encoded, { type: "single" }) });
   if (fragmentsFromFile) benches.push({ name: "provided fragments (scenario)", fragments: fragmentsFromFile });
   benches.push({ name: "fixed 64B fragments", fragments: fragment(encoded, { type: "fixed", size: 64 }) });
+  benches.push({ name: "random <= 64B fragments", fragments: fragment(encoded, { type: "random", max: 64, seed: 1 }) });
   benches.push({ name: "random <= 7B fragments", fragments: fragment(encoded, { type: "random", max: 7, seed: 2 }) });
+  benches.push({ name: "adversarial CR/LF splits", fragments: fragment(encoded, { type: "adversarial-crlf" }) });
   if (!skipWorst) benches.push({ name: "worst-case 1B fragments", fragments: fragment(encoded, { type: "fixed", size: 1 }) });
   return benches;
 }

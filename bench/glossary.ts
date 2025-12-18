@@ -23,7 +23,7 @@ export function printBenchGlossary(kind: "basic" | "compare"): void {
     lines.push("- reassembly | fragments.join(): measures the cost to join fragments back into a full buffer (reported separately).");
     lines.push("");
     lines.push("Flags:");
-    lines.push("- SKIP_WORST_CASES=1 or --skip-worst: skip the most extreme fragmentations.");
+    lines.push("- SKIP_WORST_CASES=1 or --skip-worst: skip the worst-case 1B fragmentation.");
     lines.push("- HORIZONTAL=1 or --horizontal: print one row per bench/consumer with decoders side-by-side.");
     lines.push("- --scenario <file> / --only-scenarios: add JSON fixtures as inputs (e.g. chunked_sample_50.json).");
     lines.push("- --emit / --emit-limit N / --emit-all: print expected decoded output.");
