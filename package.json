@@ -1,0 +1,19 @@
+{
+  "name": "chunked-stream-decoder-bench",
+  "version": "0.1.0",
+  "devDependencies": {
+    "@types/bun": "^1.3.4",
+    "@types/node": "^22.10.2",
+    "tsx": "^4.20.5",
+    "typescript": "^5.7.2"
+  },
+  "description": "Streaming chunked decoder (simplified) + generator + tests + benchmarks. Bun + TypeScript; Node optional for perf benchmarks.",
+  "private": true,
+  "scripts": {
+    "test": "bun test",
+    "bench:node": "node --expose-gc ./node_modules/.bin/tsx bench/bench_node.ts",
+    "bench:bun": "bun bench/bench_bun.ts",
+    "gen:sample": "bun scripts/gen_sample.ts"
+  },
+  "type": "module"
+}

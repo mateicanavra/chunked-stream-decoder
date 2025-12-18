@@ -1,0 +1,347 @@
+{
+  "id": "decoder-ts-walkthrough",
+  "title": "How `src/decoder.ts` Works: Streaming Chunked Decoder (String-based)",
+  "concepts": {
+    "format": { "label": "Wire Format", "color": "blue" },
+    "core": { "label": "Core Decoder", "color": "purple" },
+    "states": { "label": "States", "color": "green" },
+    "fragmentation": { "label": "Fragmentation Story", "color": "orange" },
+    "collect": { "label": "Collecting Output", "color": "rose" },
+    "contract": { "label": "Contract & Invariants", "color": "default" },
+    "appendix": { "label": "Appendix", "color": "default" }
+  },
+  "slides": [
+    {
+      "order": 1,
+      "concept": "format",
+      "blocks": [
+        {
+          "explanation": "We’re decoding a simplified chunked framing:\n\n```\n<hex-size>\\r\\n<payload>\\r\\n ... 0\\r\\n\\r\\n\n```\n\nKey simplifying assumptions in this repo:\n- Input arrives as **JS strings** (not bytes)\n- Chunk size counts **JS characters** (works cleanly for ASCII payloads)\n- No chunk extensions (`A;ext=...`) and no trailers"
+        },
+        {
+          "codeBlock": {
+            "file": "src/decoder.ts",
+            "startLine": 3,
+            "endLine": 12,
+            "language": "ts",
+            "highlight": [8, 9, 10, 11],
+            "code": "/**\n * Streaming chunked decoder for the simplified “problem set” format:\n *\n *   <hex-size>\\r\\n<payload>\\r\\n ... 0\\r\\n\\r\\n\n *\n * Assumptions (matches the prompt examples):\n * - Input arrives as JS strings.\n * - “Size” counts JS characters (ASCII payload). This is NOT byte-accurate for UTF-8/binary.\n * - No chunk extensions (e.g. \";ext=...\") and no trailers.\n */"
+          }
+        }
+      ]
+    },
+    {
+      "order": 2,
+      "concept": "core",
+      "blocks": [
+        {
+          "layers": {
+            "layout": "stack",
+            "layers": [
+              {
+                "label": "Input",
+                "value": "decodeChunk(chunk: string)",
+                "description": "You feed arbitrarily-fragmented string chunks; boundaries can split anywhere (even inside CRLF)."
+              },
+              {
+                "label": "Core parser",
+                "value": "ChunkedDecoder",
+                "description": "A small state machine that consumes protocol framing and emits payload fragments as soon as possible."
+              },
+              {
+                "label": "Streaming output",
+                "value": "onData(payloadFragment: string)",
+                "description": "Zero mega-buffering: payload is delivered incrementally (you can write/hash/process immediately)."
+              },
+              {
+                "label": "Convenience output",
+                "value": "CollectingDecoder.result",
+                "description": "A wrapper that collects emitted fragments (with a churn-resistant collector) and exposes one final string."
+              }
+            ]
+          }
+        },
+        {
+          "codeBlock": {
+            "file": "src/decoder.ts",
+            "startLine": 1,
+            "endLine": 1,
+            "language": "ts",
+            "highlight": [1],
+            "code": "export type OnData = (payloadFragment: string) => void;"
+          }
+        },
+        {
+          "codeBlock": {
+            "file": "src/decoder.ts",
+            "startLine": 181,
+            "endLine": 199,
+            "language": "ts",
+            "highlight": [182, 183, 185, 193, 194, 197],
+            "code": "export class CollectingDecoder {\n  private readonly collector = new BlockCollector();\n  private readonly decoder = new ChunkedDecoder((s) => this.collector.push(s));\n\n  decodeChunk(chunk: string): void {\n    this.decoder.decodeChunk(chunk);\n  }\n\n  finalize(): void {\n    this.decoder.finalize();\n  }\n\n  get result(): string {\n    if (!this.decoder.isDone()) {\n      throw new Error(\"Not finished yet (call finalize() after feeding all chunks).\");\n    }\n    return this.collector.toString();\n  }\n}"
+          }
+        }
+      ]
+    },
+    {
+      "order": 3,
+      "concept": "core",
+      "blocks": [
+        {
+          "diagram": {
+            "caption": "Everything is a loop over the current fragment + a state machine that persists across calls.",
+            "content": "stateDiagram-v2\n  [*] --> SIZE\n  SIZE --> PAYLOAD: parsed size n > 0\n  PAYLOAD --> EXPECT_CRLF: remaining == 0\n  EXPECT_CRLF --> SIZE: afterExpect = \"SIZE\"\n\n  SIZE --> EXPECT_CRLF: parsed size n == 0\n  EXPECT_CRLF --> DONE: afterExpect = \"DONE\"\n  DONE --> [*]"
+          }
+        },
+        {
+          "codeBlock": {
+            "file": "src/decoder.ts",
+            "startLine": 13,
+            "endLine": 26,
+            "language": "ts",
+            "highlight": [14, 17, 18, 21, 24, 25],
+            "code": "export class ChunkedDecoder {\n  private state: \"SIZE\" | \"PAYLOAD\" | \"EXPECT_CRLF\" | \"DONE\" = \"SIZE\";\n\n  // SIZE parsing (tiny state)\n  private sizeHex = \"\";\n  private sawCR = false;\n\n  // PAYLOAD parsing\n  private remaining = 0;\n\n  // CRLF expectation parsing\n  private expectIndex = 0; // 0 => expect '\\r', 1 => expect '\\n'\n  private afterExpect: \"SIZE\" | \"DONE\" = \"SIZE\";\n"
+          }
+        },
+        {
+          "explanation": "Everything you care about lives in these few fields:\n- `state`: where we are in the protocol\n- `sizeHex` + `sawCR`: partial parsing of the **size line** across fragments\n- `remaining`: payload characters left to emit\n- `expectIndex` + `afterExpect`: partial parsing of a required `\\r\\n` delimiter across fragments"
+        }
+      ]
+    },
+    {
+      "order": 4,
+      "concept": "core",
+      "blocks": [
+        {
+          "codeBlock": {
+            "file": "src/decoder.ts",
+            "startLine": 29,
+            "endLine": 34,
+            "language": "ts",
+            "highlight": [30, 32, 33],
+            "code": "  decodeChunk(chunk: string): void {\n    if (this.state === \"DONE\") return;\n\n    let i = 0;\n    while (i < chunk.length) {\n      if (this.state === \"SIZE\") {"
+          }
+        },
+        {
+          "explanation": "Two “time scales” at once:\n- `i` is the cursor into *this* incoming fragment (resets each call)\n- class fields (`state`, `remaining`, `sawCR`, …) persist across calls, so the decoder can resume mid-token"
+        }
+      ]
+    },
+    {
+      "order": 5,
+      "concept": "states",
+      "blocks": [
+        {
+          "codeBlock": {
+            "file": "src/decoder.ts",
+            "startLine": 34,
+            "endLine": 65,
+            "language": "ts",
+            "highlight": [37, 38, 42, 45, 48, 50, 52, 57, 58, 63],
+            "code": "      if (this.state === \"SIZE\") {\n        const c = chunk[i++];\n\n        // We previously consumed a '\\r' for the size line, so the next char MUST be '\\n'.\n        if (this.sawCR) {\n          if (c !== \"\\n\") throw new Error(\"Invalid chunked encoding: expected LF after CR in size line.\");\n          this.sawCR = false;\n\n          const n = Number.parseInt(this.sizeHex.trim() || \"0\", 16);\n          if (!Number.isFinite(n) || n < 0) throw new Error(`Invalid chunk size: \"${this.sizeHex}\"`);\n\n          this.sizeHex = \"\";\n          this.remaining = n;\n\n          if (n === 0) {\n            // Simplified termination: after \"0\\r\\n\" we expect the final \"\\r\\n\".\n            this.startExpectCRLF(\"DONE\");\n          } else {\n            this.state = \"PAYLOAD\";\n          }\n          continue;\n        }\n\n        if (c === \"\\r\") {\n          this.sawCR = true;\n          continue;\n        }\n\n        // Assumption: valid stream, no extensions. Collect the size line verbatim until CR.\n        this.sizeHex += c;\n        continue;\n      }"
+          }
+        },
+        {
+          "explanation": "SIZE is deliberately “tiny”:\n- It buffers only the hex digits (`sizeHex`), not the payload\n- `sawCR` exists because the `\\r` and `\\n` can land in different incoming fragments\n- Only after seeing the full `\\r\\n` does it parse `n` and decide: `PAYLOAD` vs terminal path"
+        }
+      ]
+    },
+    {
+      "order": 6,
+      "concept": "states",
+      "blocks": [
+        {
+          "codeBlock": {
+            "file": "src/decoder.ts",
+            "startLine": 67,
+            "endLine": 83,
+            "language": "ts",
+            "highlight": [68, 70, 73, 74, 75, 78, 80],
+            "code": "      if (this.state === \"PAYLOAD\") {\n        // Greedily consume payload from the current fragment without buffering.\n        const available = chunk.length - i;\n        const take = Math.min(this.remaining, available);\n\n        if (take > 0) {\n          this.onData(chunk.slice(i, i + take));\n          i += take;\n          this.remaining -= take;\n        }\n\n        if (this.remaining === 0) {\n          // After payload there must be a CRLF terminator.\n          this.startExpectCRLF(\"SIZE\");\n        }\n        continue;\n      }"
+          }
+        },
+        {
+          "explanation": "PAYLOAD never searches for delimiters.\n\nIt relies on `remaining` (from the size line) and emits exactly that many characters, even if the payload contains `\\r`, `\\n`, or `\\r\\n` inside it. Only *after* `remaining` hits 0 does it start consuming a protocol CRLF."
+        }
+      ]
+    },
+    {
+      "order": 7,
+      "concept": "states",
+      "blocks": [
+        {
+          "codeBlock": {
+            "file": "src/decoder.ts",
+            "startLine": 85,
+            "endLine": 98,
+            "language": "ts",
+            "highlight": [86, 89, 91, 94, 95],
+            "code": "      if (this.state === \"EXPECT_CRLF\") {\n        const expected = this.expectIndex === 0 ? \"\\r\" : \"\\n\";\n        const c = chunk[i++];\n\n        if (c !== expected) throw new Error(\"Invalid chunked encoding: expected CRLF.\");\n\n        this.expectIndex++;\n        if (this.expectIndex === 2) {\n          this.expectIndex = 0;\n          this.state = this.afterExpect === \"DONE\" ? \"DONE\" : \"SIZE\";\n          if (this.state === \"DONE\") return;\n        }\n        continue;\n      }"
+          }
+        },
+        {
+          "codeBlock": {
+            "file": "src/decoder.ts",
+            "startLine": 114,
+            "endLine": 118,
+            "language": "ts",
+            "highlight": [114, 115, 116, 117],
+            "code": "  private startExpectCRLF(next: \"SIZE\" | \"DONE\"): void {\n    this.state = \"EXPECT_CRLF\";\n    this.expectIndex = 0;\n    this.afterExpect = next;\n  }"
+          }
+        },
+        {
+          "explanation": "Why make CRLF its own state?\n- Delimiters can be split across fragments (`\"\\r\"` now, `\"\\n\"` later)\n- Centralizing delimiter validation keeps SIZE and PAYLOAD simple\n- `afterExpect` means the same CRLF parser handles both “payload terminator” and “final terminator”"
+        }
+      ]
+    },
+    {
+      "order": 8,
+      "concept": "fragmentation",
+      "blocks": [
+        {
+          "diagram": {
+            "caption": "A realistic worst-case: CRLF splits across fragments.",
+            "content": "sequenceDiagram\n  participant C as Caller\n  participant D as ChunkedDecoder\n\n  C->>D: decodeChunk(\"7\\\\r\")\n  Note right of D: SIZE: sizeHex=\"7\", sawCR=true\n\n  C->>D: decodeChunk(\"\\\\nNewtonX\\\\r\")\n  Note right of D: sees LF → parses n=7 → remaining=7 → PAYLOAD\n  Note right of D: consumes \"NewtonX\" → remaining=0 → EXPECT_CRLF(\"SIZE\")\n  Note right of D: consumes \"\\\\r\" as first half of CRLF → expectIndex=1\n\n  C->>D: decodeChunk(\"\\\\n\")\n  Note right of D: EXPECT_CRLF consumes \"\\\\n\" → back to SIZE"
+          }
+        },
+        {
+          "table": {
+            "caption": "Same story in a table (what’s consumed vs what’s emitted).",
+            "rows": [
+              "Incoming fragment,Consumed as protocol,State after,Side effect",
+              "\"7\\\\r\",\"7\" + \"\\\\r\",SIZE,Accumulates sizeHex; marks sawCR=true",
+              "\"\\\\nNewtonX\\\\r\",\"\\\\n\" + \"\\\\r\",EXPECT_CRLF (expectIndex=1),Parses n=7; emits payload \"NewtonX\"; begins consuming terminator CRLF",
+              "\"\\\\n\",\"\\\\n\",SIZE,Completes CRLF and resumes size parsing"
+            ]
+          }
+        },
+        {
+          "explanation": "The key design choice is: **payload boundaries are determined by `remaining`, not by scanning for CRLF**.\n\nThat’s what makes payloads containing `\\r` / `\\n` safe, and why delimiter parsing can be strict without accidentally eating payload bytes."
+        }
+      ]
+    },
+    {
+      "order": 9,
+      "concept": "states",
+      "blocks": [
+        {
+          "codeBlock": {
+            "file": "src/decoder.ts",
+            "startLine": 46,
+            "endLine": 54,
+            "language": "ts",
+            "highlight": [48, 50, 52],
+            "code": "          this.remaining = n;\n\n          if (n === 0) {\n            // Simplified termination: after \"0\\r\\n\" we expect the final \"\\r\\n\".\n            this.startExpectCRLF(\"DONE\");\n          } else {\n            this.state = \"PAYLOAD\";\n          }\n          continue;"
+          }
+        },
+        {
+          "codeBlock": {
+            "file": "src/decoder.ts",
+            "startLine": 105,
+            "endLine": 112,
+            "language": "ts",
+            "highlight": [105, 110, 111],
+            "code": "  isDone(): boolean {\n    return this.state === \"DONE\";\n  }\n\n  /** Throws unless we have consumed a full terminal 0-sized chunk (0\\r\\n\\r\\n). */\n  finalize(): void {\n    if (!this.isDone()) throw new Error(\"Chunked stream not finished.\");\n  }"
+          }
+        },
+        {
+          "explanation": "Completion is not “end of current fragment” — it’s **having consumed the full terminal sequence** `0\\r\\n\\r\\n`.\n\n`finalize()` is a correctness check: it throws if you call it early."
+        }
+      ]
+    },
+    {
+      "order": 10,
+      "concept": "collect",
+      "blocks": [
+        {
+          "codeBlock": {
+            "file": "src/decoder.ts",
+            "startLine": 121,
+            "endLine": 173,
+            "language": "ts",
+            "highlight": [132, 142, 145, 148, 153, 155, 160, 168, 172],
+            "code": "/**\n * A collector that avoids pathological memory churn when the stream is split into\n * extremely tiny fragments. It groups many small fragments into medium-sized blocks.\n *\n * - Each fragment is stored once in `pending`.\n * - Occasionally, `pending` is joined into a single block string.\n * - At the very end, all blocks are joined to produce one final string.\n *\n * This ensures any character is copied O(1) times: once into a block and once\n * into the final result.\n */\nclass BlockCollector {\n  private blocks: string[] = [];\n  private pending: string[] = [];\n  private pendingChars = 0;\n\n  constructor(\n    private readonly maxPendingChars = 64 * 1024,\n    private readonly maxPendingParts = 2048\n  ) {}\n\n  push(fragment: string): void {\n    if (fragment.length === 0) return;\n\n    this.pending.push(fragment);\n    this.pendingChars += fragment.length;\n\n    if (this.pendingChars >= this.maxPendingChars || this.pending.length >= this.maxPendingParts) {\n      this.flush();\n    }\n  }\n\n  flush(): void {\n    if (this.pending.length === 0) return;\n    this.blocks.push(this.pending.join(\"\"));\n    this.pending = [];\n    this.pendingChars = 0;\n  }\n\n  toString(): string {\n    if (this.blocks.length === 0) {\n      // Avoid one extra join in the common case.\n      if (this.pending.length === 0) return \"\";\n      if (this.pending.length === 1) return this.pending[0];\n      return this.pending.join(\"\");\n    }\n\n    // Flush pending into blocks once, then do a single final join.\n    this.flush();\n\n    if (this.blocks.length === 1) return this.blocks[0];\n    return this.blocks.join(\"\");\n  }\n}"
+          }
+        },
+        {
+          "explanation": "If the stream is split into tons of tiny fragments, naive `result += fragment` can repeatedly re-copy big strings.\n\n`BlockCollector` amortizes that:\n- collect many small strings in `pending`\n- occasionally `join` them into a medium block\n- do **one** final join at the end"
+        }
+      ]
+    },
+    {
+      "order": 11,
+      "concept": "collect",
+      "blocks": [
+        {
+          "codeBlock": {
+            "file": "src/decoder.ts",
+            "startLine": 181,
+            "endLine": 199,
+            "language": "ts",
+            "highlight": [182, 183, 185, 189, 193, 194, 197],
+            "code": "export class CollectingDecoder {\n  private readonly collector = new BlockCollector();\n  private readonly decoder = new ChunkedDecoder((s) => this.collector.push(s));\n\n  decodeChunk(chunk: string): void {\n    this.decoder.decodeChunk(chunk);\n  }\n\n  finalize(): void {\n    this.decoder.finalize();\n  }\n\n  get result(): string {\n    if (!this.decoder.isDone()) {\n      throw new Error(\"Not finished yet (call finalize() after feeding all chunks).\");\n    }\n    return this.collector.toString();\n  }\n}"
+          }
+        },
+        {
+          "explanation": "`CollectingDecoder` is intentionally thin:\n- It keeps `ChunkedDecoder` as the single source of truth for correctness\n- It only changes **how output is accumulated**"
+        }
+      ]
+    },
+    {
+      "order": 12,
+      "concept": "contract",
+      "blocks": [
+        {
+          "layers": {
+            "layout": "stack",
+            "layers": [
+              {
+                "label": "Inputs",
+                "value": "string fragments",
+                "description": "`decodeChunk(chunk)` accepts arbitrary boundaries (including splitting CRLF pairs)."
+              },
+              {
+                "label": "Outputs",
+                "value": "stream or collect",
+                "description": "Streaming: `onData(payloadFragment)`; Collecting: `CollectingDecoder.result` (only after `finalize()`)."
+              },
+              {
+                "label": "Invariants",
+                "value": "bounded state",
+                "description": "`remaining` tracks payload length; protocol CRLF is consumed only in SIZE/EXPECT_CRLF; `DONE` is terminal."
+              },
+              {
+                "label": "Error modes",
+                "value": "strict framing",
+                "description": "Throws on malformed size-line CRLF, malformed delimiter CRLF, invalid hex/negative sizes, or `finalize()` before terminal chunk."
+              }
+            ]
+          }
+        },
+        {
+          "explanation": "This is the “bookmark” slide: if you’re changing the decoder, protect these invariants first."
+        }
+      ]
+    },
+    {
+      "order": 13,
+      "concept": "appendix",
+      "blocks": [
+        {
+          "codeBlock": {
+            "file": "tests/decoder.test.ts",
+            "startLine": 21,
+            "endLine": 91,
+            "language": "ts",
+            "highlight": [35, 39, 46, 58, 70, 80, 86, 90],
+            "code": "describe(\"ChunkedDecoder (simplified)\", () => {\n  it(\"decodes the prompt example\", () => {\n    const encoded =\n      \"7\\r\\nNewtonX\\r\\n\" +\n      \"B\\r\\n is hiring \\r\\n\" +\n      \"8\\r\\nawesome \\r\\n\" +\n      \"9\\r\\nengineers\\r\\n\" +\n      \"0\\r\\n\\r\\n\";\n\n    const frags = fragment(encoded, { type: \"random\", max: 7, seed: 42 });\n    expect(decodeViaCallback(frags)).toBe(\"NewtonX is hiring awesome engineers\");\n    expect(decodeViaCollector(frags)).toBe(\"NewtonX is hiring awesome engineers\");\n  });\n\n  it(\"handles payloads that contain CR/LF/CRLF sequences\", () => {\n    const payload = \"hello\\rworld\\nOK\\r\\nEND\";\n    const { encoded } = encodeChunked(payload, { type: \"fixed\", size: 3 });\n\n    // Very adversarial fragmentation: split after every CR or LF.\n    const frags = fragment(encoded, { type: \"adversarial-crlf\" });\n\n    expect(decodeViaCallback(frags)).toBe(payload);\n    expect(decodeViaCollector(frags)).toBe(payload);\n  });\n\n  it(\"passes randomized chaos tests across fragmentation strategies\", () => {\n    const strategies = [\n      { type: \"single\" } as const,\n      { type: \"fixed\", size: 1 } as const,\n      { type: \"fixed\", size: 2 } as const,\n      { type: \"fixed\", size: 7 } as const,\n      { type: \"fixed\", size: 64 } as const,\n      { type: \"random\", max: 7, seed: 1 } as const,\n      { type: \"random\", max: 64, seed: 2 } as const,\n      { type: \"adversarial-crlf\" } as const,\n    ];\n\n    for (let seed = 1; seed <= 25; seed++) {\n      const payloadLen = 2000 + (seed * 7919) % 6000; // 2k..8k-ish\n      const { payload, encoded } = generateChunkedCase(payloadLen, {\n        payloadSeed: seed,\n        chunkSeed: seed * 1000 + 7,\n        payloadCrlfProbability: 0.02,\n        payloadCrProbability: 0.01,\n        payloadLfProbability: 0.01,\n        randomChunkMin: 1,\n        randomChunkMax: 128,\n      });\n\n      for (const strat of strategies) {\n        const frags = fragment(encoded, strat as any);\n        const out1 = decodeViaCallback(frags);\n        const out2 = decodeViaCollector(frags);\n        expect(out1).toBe(payload);\n        expect(out2).toBe(payload);\n      }\n    }\n  });\n\n  it(\"throws on malformed size-line CRLF\", () => {\n    const bad = \"1\\rX\\r\\nA\\r\\n0\\r\\n\\r\\n\"; // CR not followed by LF in size line\n    const d = new CollectingDecoder();\n    expect(() => d.decodeChunk(bad)).toThrow();\n  });\n\n  it(\"throws if finalize() is called before terminal chunk is read\", () => {\n    const encoded = \"1\\r\\nA\\r\\n\"; // missing 0\\r\\n\\r\\n\n    const d = new CollectingDecoder();\n    d.decodeChunk(encoded);\n    expect(() => d.finalize()).toThrow();\n  });"
+          }
+        },
+        {
+          "explanation": "These tests are why the decoder can be strict about CRLF while still supporting adversarial fragmentation and payloads containing CR/LF."
+        }
+      ]
+    }
+  ]
+}
+

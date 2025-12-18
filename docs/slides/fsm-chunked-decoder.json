@@ -1,0 +1,416 @@
+{
+  "id": "fsm-chunked-decoder",
+  "title": "Finite State Machines & The Streaming Chunked Decoder",
+  "concepts": {
+    "fsm-theory": {
+      "label": "FSM Theory",
+      "description": "Abstract state machine concepts",
+      "color": "blue"
+    },
+    "problem": {
+      "label": "The Problem",
+      "description": "Constraints and challenges",
+      "color": "orange"
+    },
+    "architecture": {
+      "label": "Architecture",
+      "description": "Solution design overview",
+      "color": "purple"
+    },
+    "implementation": {
+      "label": "Implementation",
+      "description": "Code-level details",
+      "color": "green"
+    },
+    "evaluation": {
+      "label": "Evaluation",
+      "description": "Assessment against criteria",
+      "color": "rose"
+    }
+  },
+  "slides": [
+    {
+      "id": "what-is-fsm",
+      "order": 1,
+      "concept": "fsm-theory",
+      "explanation": "Before we dive into code, let's build intuition for the pattern that makes streaming parsers possible.",
+      "blocks": [
+        {
+          "explanation": "## What is a Finite State Machine?\n\nA **finite state machine** (FSM) is a computational model with:\n\n- A **finite set of states** — discrete modes of operation\n- **Transitions** — rules for moving between states based on input\n- **Deterministic behavior** — same state + same input = same result\n\nThe key insight: *remember where you are, not everything you've seen.*"
+        },
+        {
+          "diagram": {
+            "content": "stateDiagram-v2\n    [*] --> Locked\n    Locked --> Unlocked: coin\n    Unlocked --> Locked: push\n    Unlocked --> Unlocked: coin\n    Locked --> Locked: push",
+            "caption": "Classic example: a turnstile. Two states, four transitions, zero memory of past coins."
+          }
+        },
+        {
+          "explanation": "An FSM processes input **one symbol at a time**, updating its state as it goes. It doesn't need to buffer the entire input — just track which state it's in and any minimal context required for the current operation."
+        }
+      ]
+    },
+    {
+      "id": "fsm-anatomy",
+      "order": 2,
+      "concept": "fsm-theory",
+      "explanation": "Every FSM has the same fundamental components.",
+      "blocks": [
+        {
+          "layers": {
+            "layout": "stack",
+            "layers": [
+              {
+                "label": "States",
+                "value": "The \"modes\"",
+                "description": "What am I currently doing? Parsing a header? Reading data? Waiting for a delimiter?"
+              },
+              {
+                "label": "Transitions",
+                "value": "The \"rules\"",
+                "description": "What input causes me to change mode? A newline? A specific byte count? End of input?"
+              },
+              {
+                "label": "State Variables",
+                "value": "The \"context\"",
+                "description": "What minimal information must I carry? A counter? A partial value? A flag?"
+              }
+            ]
+          }
+        },
+        {
+          "explanation": "The art of FSM design is **minimizing state variables** while maintaining correctness. Every byte of persistent state is memory that scales with concurrent connections."
+        }
+      ]
+    },
+    {
+      "id": "why-fsm-streaming",
+      "order": 3,
+      "concept": "fsm-theory",
+      "explanation": "Why is this pattern perfect for streaming parsers?",
+      "blocks": [
+        {
+          "explanation": "## The Streaming Constraint\n\nData arrives in **arbitrary fragments**. You can't wait for the \"complete\" input because:\n\n1. You don't know when it's complete\n2. Buffering everything destroys memory at scale\n3. Users expect low latency — process as data arrives"
+        },
+        {
+          "table": {
+            "rows": [
+              "Approach,Memory,Latency,Handles Arbitrary Splits?",
+              "Buffer Everything,O(message size),High (wait for complete),Yes but expensive",
+              "Regex/Line-Based,O(line size),Medium,No — needs complete lines",
+              "FSM,O(state variables),Minimal,Yes — by design"
+            ],
+            "caption": "FSMs win on all three axes for streaming scenarios"
+          }
+        },
+        {
+          "explanation": "**The FSM superpower:** process each byte exactly once, carry only essential state, and handle input boundaries anywhere without special cases."
+        }
+      ]
+    },
+    {
+      "id": "chaos-monkey",
+      "order": 4,
+      "concept": "problem",
+      "explanation": "Now let's see the specific problem that demands an FSM solution.",
+      "blocks": [
+        {
+          "explanation": "## HTTP Chunked Transfer Encoding\n\nThe protocol format is straightforward:\n\n```\n<hex-size>\\r\\n<payload>\\r\\n<hex-size>\\r\\n<payload>\\r\\n...0\\r\\n\\r\\n\n```\n\nEach chunk declares its size in hex, followed by that many bytes of payload, followed by CRLF. A zero-size chunk signals the end."
+        },
+        {
+          "diagram": {
+            "content": "flowchart LR\n    A[\"7\\r\\n\"] --> B[\"NewtonX\\r\\n\"]\n    B --> C[\"1C\\r\\n\"]\n    C --> D[\" is hiring awesome engineers\\r\\n\"]\n    D --> E[\"0\\r\\n\\r\\n\"]\n    \n    style A fill:#e0e7ff\n    style C fill:#e0e7ff\n    style E fill:#e0e7ff\n    style B fill:#d1fae5\n    style D fill:#d1fae5",
+            "caption": "Blue = protocol overhead (size + delimiters), Green = payload data"
+          }
+        },
+        {
+          "explanation": "## The Twist: Chaos Monkey\n\nThe network can split this stream **anywhere**:\n\n- Mid-hex: `\"1\"` now, `\"A\"` later\n- Mid-CRLF: `\"\\r\"` now, `\"\\n\"` later  \n- Mid-payload: `\"New\"` now, `\"tonX\"` later\n\nYour parser must handle all of these without buffering the entire stream."
+        }
+      ]
+    },
+    {
+      "id": "naive-fails",
+      "order": 5,
+      "concept": "problem",
+      "explanation": "Let's eliminate the obvious approach.",
+      "blocks": [
+        {
+          "explanation": "## The Tempting Trap"
+        },
+        {
+          "codeBlock": {
+            "file": "naive-approach.ts",
+            "language": "typescript",
+            "startLine": 1,
+            "endLine": 7,
+            "code": "class NaiveDecoder {\n  private buffer = \"\";\n  \n  decodeChunk(chunk: string): void {\n    this.buffer += chunk; // Accumulate everything\n    // Parse \"later\" when we have \"enough\"\n  }\n}"
+          }
+        },
+        {
+          "explanation": "## Why This Fails\n\n**Memory explosion:** At millions of concurrent connections, each buffering its stream, memory consumption becomes unbounded.\n\n**Parse timing:** When do you parse? You don't know when you have \"enough\" until you've parsed — a chicken-and-egg problem.\n\n**The requirement:** Process data **greedily**. As soon as you can extract information, do so and discard the raw bytes immediately."
+        }
+      ]
+    },
+    {
+      "id": "four-states",
+      "order": 6,
+      "concept": "architecture",
+      "explanation": "The ChunkedDecoder maps protocol phases directly to FSM states.",
+      "blocks": [
+        {
+          "explanation": "## Four States for Four Phases\n\nEach state has a single responsibility and knows exactly what input it's looking for."
+        },
+        {
+          "layers": {
+            "layout": "stack",
+            "layers": [
+              {
+                "label": "SIZE",
+                "value": "Parse hex header",
+                "description": "Accumulate hex digits until CRLF, then parse to integer. This tells us how many payload bytes to expect."
+              },
+              {
+                "label": "PAYLOAD",
+                "value": "Read data bytes",
+                "description": "Consume exactly `remaining` characters, emitting them via callback. Greedy bulk processing."
+              },
+              {
+                "label": "EXPECT_CRLF",
+                "value": "Validate delimiter",
+                "description": "Expect exactly \\r then \\n. Parameterized: goes to SIZE (next chunk) or DONE (after zero-chunk)."
+              },
+              {
+                "label": "DONE",
+                "value": "Terminal state",
+                "description": "Stream complete. Ignore any further input. Safe to call finalize()."
+              }
+            ]
+          }
+        },
+        {
+          "explanation": "**Design insight:** `EXPECT_CRLF` is reusable. The same two-character validation logic serves both post-payload and post-zero-chunk contexts — parameterized by `afterExpect`."
+        }
+      ]
+    },
+    {
+      "id": "state-diagram",
+      "order": 7,
+      "concept": "architecture",
+      "explanation": "Here's the complete state machine visualized.",
+      "blocks": [
+        {
+          "diagram": {
+            "content": "stateDiagram-v2\n    [*] --> SIZE\n    \n    SIZE --> SIZE: hex digit\n    SIZE --> SIZE: saw CR, accumulate\n    SIZE --> PAYLOAD: CRLF + size > 0\n    SIZE --> EXPECT_CRLF: CRLF + size = 0\n    \n    PAYLOAD --> PAYLOAD: consume bytes\n    PAYLOAD --> EXPECT_CRLF: remaining = 0\n    \n    EXPECT_CRLF --> EXPECT_CRLF: saw CR\n    EXPECT_CRLF --> SIZE: LF (afterExpect=SIZE)\n    EXPECT_CRLF --> DONE: LF (afterExpect=DONE)\n    \n    DONE --> [*]",
+            "caption": "The SIZE → PAYLOAD → EXPECT_CRLF → SIZE loop repeats until size=0"
+          }
+        },
+        {
+          "explanation": "**The core loop:** Parse size → read payload → validate CRLF → repeat.\n\n**Termination:** When size parses to zero, we skip PAYLOAD entirely and expect the final CRLF before transitioning to DONE."
+        }
+      ]
+    },
+    {
+      "id": "state-variables",
+      "order": 8,
+      "concept": "architecture",
+      "explanation": "How much memory does this FSM actually need?",
+      "blocks": [
+        {
+          "table": {
+            "rows": [
+              "Variable,Type,Purpose,Size",
+              "state,enum (4 values),Current FSM state,1 byte",
+              "sizeHex,string,Hex digits being accumulated,~1-8 chars",
+              "sawCR,boolean,Tracking split CRLF in SIZE state,1 bit",
+              "remaining,number,Payload bytes left to read,8 bytes",
+              "expectIndex,number (0 or 1),Position in CRLF sequence,1 bit",
+              "afterExpect,enum (2 values),Where to go after CRLF,1 bit"
+            ],
+            "caption": "Total: ~20 bytes + small string buffer"
+          }
+        },
+        {
+          "explanation": "**This is the FSM payoff.** With roughly 20 bytes of state per connection, you can handle gigabytes of throughput. The state variables are the *only* memory that scales with connection count — the payload data flows through without accumulation."
+        }
+      ]
+    },
+    {
+      "id": "main-loop",
+      "order": 9,
+      "concept": "implementation",
+      "explanation": "Let's walk through the actual code, starting with the processing structure.",
+      "blocks": [
+        {
+          "explanation": "## The Main Loop Pattern"
+        },
+        {
+          "codeBlock": {
+            "file": "src/decoder.ts",
+            "language": "typescript",
+            "startLine": 29,
+            "endLine": 35,
+            "code": "decodeChunk(chunk: string): void {\n  if (this.state === \"DONE\") return;\n\n  // Cursor into the current chunk\n  let i = 0;\n  while (i < chunk.length) {\n    // STATE MACHINE dispatches here...",
+            "highlight": [30, 34]
+          }
+        },
+        {
+          "explanation": "**Key patterns:**\n\n1. **Early exit** if already DONE — ignore trailing data\n2. **Cursor `i`** advances through the chunk — no copying into a buffer\n3. **While loop** processes until chunk exhausted — may span multiple state transitions\n\nThe state machine body follows: a series of `if (this.state === \"...\")` blocks, each handling its state's logic."
+        }
+      ]
+    },
+    {
+      "id": "size-state",
+      "order": 10,
+      "concept": "implementation",
+      "explanation": "The SIZE state parses hex headers character by character.",
+      "blocks": [
+        {
+          "explanation": "## SIZE State: Parsing the Hex Header\n\n**Goal:** Accumulate hex digits until CRLF, then parse to integer.\n\n**Challenge:** The CRLF might be split across chunks (`\\r` now, `\\n` later)."
+        },
+        {
+          "codeBlock": {
+            "file": "src/decoder.ts",
+            "language": "typescript",
+            "startLine": 36,
+            "endLine": 67,
+            "code": "if (this.state === \"SIZE\") {\n  const c = chunk[i++];\n\n  // We previously consumed a '\\r' for the size line, so the next char MUST be '\\n'.\n  if (this.sawCR) {\n    if (c !== \"\\n\") throw new Error(\"Invalid chunked encoding: expected LF after CR in size line.\");\n    this.sawCR = false;\n\n    const n = Number.parseInt(this.sizeHex.trim() || \"0\", 16);\n    if (!Number.isFinite(n) || n < 0) throw new Error(`Invalid chunk size: \"${this.sizeHex}\"`);\n\n    this.sizeHex = \"\";\n    this.remaining = n;\n\n    if (n === 0) {\n      // Simplified termination: after \"0\\r\\n\" we expect the final \"\\r\\n\".\n      this.startExpectCRLF(\"DONE\");\n    } else {\n      this.state = \"PAYLOAD\";\n    }\n    continue;\n  }\n\n  if (c === \"\\r\") {\n    this.sawCR = true;\n    continue;\n  }\n\n  // Assumption: valid stream, no extensions. Collect the size line verbatim until CR.\n  this.sizeHex += c;\n  continue;\n}",
+            "highlight": [40, 44, 47, 50, 59]
+          }
+        },
+        {
+          "explanation": "**Highlighted lines:**\n- **40:** `sawCR` flag handles split CRLF\n- **44:** Parse hex to int, clear accumulator immediately\n- **47:** `sizeHex = \"\"` — greedy discard of protocol bytes\n- **50:** Zero size → terminal sequence\n- **59:** CR detected → set flag, wait for LF"
+        }
+      ]
+    },
+    {
+      "id": "payload-state",
+      "order": 11,
+      "concept": "implementation",
+      "explanation": "The PAYLOAD state processes data in bulk — no character-by-character here.",
+      "blocks": [
+        {
+          "explanation": "## PAYLOAD State: Greedy Bulk Processing\n\nUnlike SIZE (which must inspect each character), PAYLOAD knows exactly how many bytes it needs. It can **slice** the chunk directly."
+        },
+        {
+          "codeBlock": {
+            "file": "src/decoder.ts",
+            "language": "typescript",
+            "startLine": 69,
+            "endLine": 85,
+            "code": "if (this.state === \"PAYLOAD\") {\n  // Greedily consume payload from the current fragment without buffering.\n  const available = chunk.length - i;\n  const take = Math.min(this.remaining, available);\n\n  if (take > 0) {\n    this.onData(chunk.slice(i, i + take));\n    i += take;\n    this.remaining -= take;\n  }\n\n  if (this.remaining === 0) {\n    // After payload there must be a CRLF terminator.\n    this.startExpectCRLF(\"SIZE\");\n  }\n  continue;\n}",
+            "highlight": [72, 75, 80]
+          }
+        },
+        {
+          "explanation": "**Key efficiency patterns:**\n\n- **Line 72:** `Math.min` handles partial chunks gracefully\n- **Line 75:** `slice()` creates a view, emits immediately via callback\n- **Line 80:** When payload complete, transition to CRLF validation\n\n**Zero buffering:** Data flows through `onData` callback — the decoder never holds payload bytes."
+        }
+      ]
+    },
+    {
+      "id": "expect-crlf",
+      "order": 12,
+      "concept": "implementation",
+      "explanation": "EXPECT_CRLF demonstrates elegant state reuse.",
+      "blocks": [
+        {
+          "explanation": "## EXPECT_CRLF: The Reusable Sub-State\n\nCRLF appears twice in the protocol:\n1. After each payload chunk\n2. After the zero-length terminator\n\nSame validation logic, different next state. Solution: **parameterize the transition.**"
+        },
+        {
+          "codeBlock": {
+            "file": "src/decoder.ts",
+            "language": "typescript",
+            "startLine": 87,
+            "endLine": 100,
+            "code": "if (this.state === \"EXPECT_CRLF\") {\n  const expected = this.expectIndex === 0 ? \"\\r\" : \"\\n\";\n  const c = chunk[i++];\n\n  if (c !== expected) throw new Error(\"Invalid chunked encoding: expected CRLF.\");\n\n  this.expectIndex++;\n  if (this.expectIndex === 2) {\n    this.expectIndex = 0;\n    this.state = this.afterExpect === \"DONE\" ? \"DONE\" : \"SIZE\";\n    if (this.state === \"DONE\") return;\n  }\n  continue;\n}"
+          }
+        },
+        {
+          "codeBlock": {
+            "file": "src/decoder.ts",
+            "language": "typescript",
+            "startLine": 116,
+            "endLine": 120,
+            "code": "private startExpectCRLF(next: \"SIZE\" | \"DONE\"): void {\n  this.state = \"EXPECT_CRLF\";\n  this.expectIndex = 0;\n  this.afterExpect = next;\n}"
+          }
+        },
+        {
+          "explanation": "**Pattern:** `afterExpect` stores where to go after validation completes.\n\n- Called with `\"SIZE\"` after payload → continues to next chunk\n- Called with `\"DONE\"` after zero-chunk → terminates stream\n\nOne implementation, two use cases. This is FSM design elegance."
+        }
+      ]
+    },
+    {
+      "id": "block-collector",
+      "order": 13,
+      "concept": "implementation",
+      "explanation": "The parsing FSM solves input fragmentation. But what about output accumulation?",
+      "blocks": [
+        {
+          "explanation": "## BlockCollector: Taming String Concatenation\n\nThe FSM handles *parsing* efficiently. But if we naively accumulate output:\n\n```typescript\nthis.result += fragment; // O(n) per append → O(n²) total\n```\n\nWith thousands of tiny fragments, this becomes quadratic. The solution: **two-tier batching.**"
+        },
+        {
+          "diagram": {
+            "content": "flowchart LR\n    subgraph Input\n        F1[fragment] --> F2[fragment] --> F3[fragment] --> F4[...]\n    end\n    \n    subgraph Tier 1\n        F1 & F2 & F3 --> P[\"pending[]\"]\n        P -->|flush at 64KB or 2048 items| B1[block]\n    end\n    \n    subgraph Tier 2\n        B1 --> BL[\"blocks[]\"]\n        B2[block] --> BL\n        B3[block] --> BL\n    end\n    \n    BL -->|\"single join()\"| R[\"final result\"]\n    \n    style P fill:#fef3c7\n    style BL fill:#dbeafe\n    style R fill:#d1fae5",
+            "caption": "Each character is copied at most twice: once into a block, once into the final result"
+          }
+        },
+        {
+          "explanation": "**Amortized O(1) per character:**\n\n- Small fragments accumulate in `pending[]`\n- At threshold (64KB or 2048 items), joined into a single block\n- Final `toString()` joins all blocks once\n\nThis is a **separate concern** from the FSM — composition over inheritance."
+        }
+      ]
+    },
+    {
+      "id": "evaluation",
+      "order": 14,
+      "concept": "evaluation",
+      "explanation": "Does ChunkedDecoder meet the original success criteria?",
+      "blocks": [
+        {
+          "table": {
+            "rows": [
+              "Criterion,Requirement,How ChunkedDecoder Satisfies",
+              "Correctness,Output exact decoded payload,FSM processes protocol bytes correctly; emits only payload data",
+              "Efficiency,Minimal memory footprint,~20 bytes state + no input buffering; BlockCollector handles output",
+              "Elegance,Clear state management,Four explicit states with single responsibilities; reusable EXPECT_CRLF"
+            ],
+            "caption": "All three criteria satisfied"
+          }
+        },
+        {
+          "explanation": "## Verdict\n\n**The FSM architecture delivers on all three axes.**\n\n- **Correctness:** State machine precisely tracks protocol position; impossible to \"lose\" data or misparse boundaries\n- **Efficiency:** Greedy processing + minimal state = constant memory per connection regardless of message size\n- **Elegance:** Each state does one thing; transitions are explicit; `startExpectCRLF` shows thoughtful reuse\n\nThis is what well-designed streaming parsers look like."
+        }
+      ]
+    },
+    {
+      "id": "takeaways",
+      "order": 15,
+      "concept": "fsm-theory",
+      "explanation": "Returning to the abstract: what lessons generalize beyond this decoder?",
+      "blocks": [
+        {
+          "layers": {
+            "layout": "pyramid",
+            "layers": [
+              {
+                "label": "Process Greedily",
+                "value": "Extract and discard immediately",
+                "description": "Don't buffer what you can process. Every byte of buffered input is memory that scales with connections."
+              },
+              {
+                "label": "Minimize Context",
+                "value": "Carry only what's essential",
+                "description": "State variables should be the minimum needed to resume processing. A counter, a flag, a small accumulator."
+              },
+              {
+                "label": "Know Your States",
+                "value": "One responsibility per state",
+                "description": "Each state should have a clear purpose: \"I'm reading hex digits\" or \"I'm consuming payload bytes.\" Ambiguity breeds bugs."
+              }
+            ]
+          }
+        },
+        {
+          "explanation": "## The FSM Pattern\n\nFinite state machines turn **chaotic streaming input** into **predictable, memory-efficient processing**.\n\nThe pattern applies far beyond HTTP parsing:\n- Protocol decoders (WebSocket frames, MQTT packets)\n- Lexers and tokenizers\n- UI interaction handlers\n- Game entity behaviors\n\n**The core insight remains:** Remember where you are, not everything you've seen."
+        }
+      ]
+    }
+  ]
+}
