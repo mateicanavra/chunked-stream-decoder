@@ -1,4 +1,4 @@
-import { CollectingDecoder } from "../src/decoder";
+import { ChunkedCollectingDecoder } from "../src/decoder";
 import { generateChunkedCase } from "../src/generator";
 import { fragment } from "../src/fragmenter";
 
@@ -18,7 +18,7 @@ console.log(encoded);
 console.log("\nChunk sizes:", chunks.map((c) => c.size));
 
 const frags = fragment(encoded, { type: "random", max: 7, seed: 123 });
-const d = new CollectingDecoder();
+const d = new ChunkedCollectingDecoder();
 for (const f of frags) d.decodeChunk(f);
 d.finalize();
 

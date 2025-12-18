@@ -1,0 +1,435 @@
+{
+  "payload": "A sample of chunked encoding for streaming decoders who need to stay resilient along the path to real-time diagnostics. Carefully measured fragments travel through memory buffers. Observers scrutinize each boundary watching for stray CR\r sequences. LF\n detection keeps things safe. Resend events. CRLF\r\n sequences ensure protocol accuracy. A dash of latency awareness safeguards the flow. Bright logs and metadata guide the journey. This design includes a single byte probe Y plus a longer run of text verifying chunk sizing. Additional narrative spans the rest to reach fifty pieces. End. This overarching sentence extends beyond the modest threshold to verify chunk length handling gracefully.",
+  "chunks": [
+    {
+      "sizeHex": "1",
+      "payloadFragment": "A"
+    },
+    {
+      "sizeHex": "7",
+      "payloadFragment": " sample"
+    },
+    {
+      "sizeHex": "3",
+      "payloadFragment": " of"
+    },
+    {
+      "sizeHex": "8",
+      "payloadFragment": " chunked"
+    },
+    {
+      "sizeHex": "9",
+      "payloadFragment": " encoding"
+    },
+    {
+      "sizeHex": "4",
+      "payloadFragment": " for"
+    },
+    {
+      "sizeHex": "a",
+      "payloadFragment": " streaming"
+    },
+    {
+      "sizeHex": "9",
+      "payloadFragment": " decoders"
+    },
+    {
+      "sizeHex": "4",
+      "payloadFragment": " who"
+    },
+    {
+      "sizeHex": "5",
+      "payloadFragment": " need"
+    },
+    {
+      "sizeHex": "3",
+      "payloadFragment": " to"
+    },
+    {
+      "sizeHex": "5",
+      "payloadFragment": " stay"
+    },
+    {
+      "sizeHex": "a",
+      "payloadFragment": " resilient"
+    },
+    {
+      "sizeHex": "6",
+      "payloadFragment": " along"
+    },
+    {
+      "sizeHex": "4",
+      "payloadFragment": " the"
+    },
+    {
+      "sizeHex": "5",
+      "payloadFragment": " path"
+    },
+    {
+      "sizeHex": "3",
+      "payloadFragment": " to"
+    },
+    {
+      "sizeHex": "a",
+      "payloadFragment": " real-time"
+    },
+    {
+      "sizeHex": "d",
+      "payloadFragment": " diagnostics."
+    },
+    {
+      "sizeHex": "a",
+      "payloadFragment": " Carefully"
+    },
+    {
+      "sizeHex": "9",
+      "payloadFragment": " measured"
+    },
+    {
+      "sizeHex": "a",
+      "payloadFragment": " fragments"
+    },
+    {
+      "sizeHex": "7",
+      "payloadFragment": " travel"
+    },
+    {
+      "sizeHex": "8",
+      "payloadFragment": " through"
+    },
+    {
+      "sizeHex": "7",
+      "payloadFragment": " memory"
+    },
+    {
+      "sizeHex": "9",
+      "payloadFragment": " buffers."
+    },
+    {
+      "sizeHex": "a",
+      "payloadFragment": " Observers"
+    },
+    {
+      "sizeHex": "b",
+      "payloadFragment": " scrutinize"
+    },
+    {
+      "sizeHex": "5",
+      "payloadFragment": " each"
+    },
+    {
+      "sizeHex": "9",
+      "payloadFragment": " boundary"
+    },
+    {
+      "sizeHex": "9",
+      "payloadFragment": " watching"
+    },
+    {
+      "sizeHex": "4",
+      "payloadFragment": " for"
+    },
+    {
+      "sizeHex": "6",
+      "payloadFragment": " stray"
+    },
+    {
+      "sizeHex": "4",
+      "payloadFragment": " CR\r"
+    },
+    {
+      "sizeHex": "b",
+      "payloadFragment": " sequences."
+    },
+    {
+      "sizeHex": "4",
+      "payloadFragment": " LF\n"
+    },
+    {
+      "sizeHex": "a",
+      "payloadFragment": " detection"
+    },
+    {
+      "sizeHex": "6",
+      "payloadFragment": " keeps"
+    },
+    {
+      "sizeHex": "7",
+      "payloadFragment": " things"
+    },
+    {
+      "sizeHex": "6",
+      "payloadFragment": " safe."
+    },
+    {
+      "sizeHex": "7",
+      "payloadFragment": " Resend"
+    },
+    {
+      "sizeHex": "8",
+      "payloadFragment": " events."
+    },
+    {
+      "sizeHex": "7",
+      "payloadFragment": " CRLF\r\n"
+    },
+    {
+      "sizeHex": "a",
+      "payloadFragment": " sequences"
+    },
+    {
+      "sizeHex": "7",
+      "payloadFragment": " ensure"
+    },
+    {
+      "sizeHex": "9",
+      "payloadFragment": " protocol"
+    },
+    {
+      "sizeHex": "a",
+      "payloadFragment": " accuracy."
+    },
+    {
+      "sizeHex": "2",
+      "payloadFragment": " A"
+    },
+    {
+      "sizeHex": "5",
+      "payloadFragment": " dash"
+    },
+    {
+      "sizeHex": "3",
+      "payloadFragment": " of"
+    },
+    {
+      "sizeHex": "8",
+      "payloadFragment": " latency"
+    },
+    {
+      "sizeHex": "a",
+      "payloadFragment": " awareness"
+    },
+    {
+      "sizeHex": "b",
+      "payloadFragment": " safeguards"
+    },
+    {
+      "sizeHex": "4",
+      "payloadFragment": " the"
+    },
+    {
+      "sizeHex": "6",
+      "payloadFragment": " flow."
+    },
+    {
+      "sizeHex": "7",
+      "payloadFragment": " Bright"
+    },
+    {
+      "sizeHex": "5",
+      "payloadFragment": " logs"
+    },
+    {
+      "sizeHex": "4",
+      "payloadFragment": " and"
+    },
+    {
+      "sizeHex": "9",
+      "payloadFragment": " metadata"
+    },
+    {
+      "sizeHex": "6",
+      "payloadFragment": " guide"
+    },
+    {
+      "sizeHex": "4",
+      "payloadFragment": " the"
+    },
+    {
+      "sizeHex": "9",
+      "payloadFragment": " journey."
+    },
+    {
+      "sizeHex": "5",
+      "payloadFragment": " This"
+    },
+    {
+      "sizeHex": "7",
+      "payloadFragment": " design"
+    },
+    {
+      "sizeHex": "9",
+      "payloadFragment": " includes"
+    },
+    {
+      "sizeHex": "2",
+      "payloadFragment": " a"
+    },
+    {
+      "sizeHex": "7",
+      "payloadFragment": " single"
+    },
+    {
+      "sizeHex": "5",
+      "payloadFragment": " byte"
+    },
+    {
+      "sizeHex": "6",
+      "payloadFragment": " probe"
+    },
+    {
+      "sizeHex": "2",
+      "payloadFragment": " Y"
+    },
+    {
+      "sizeHex": "5",
+      "payloadFragment": " plus"
+    },
+    {
+      "sizeHex": "2",
+      "payloadFragment": " a"
+    },
+    {
+      "sizeHex": "7",
+      "payloadFragment": " longer"
+    },
+    {
+      "sizeHex": "4",
+      "payloadFragment": " run"
+    },
+    {
+      "sizeHex": "3",
+      "payloadFragment": " of"
+    },
+    {
+      "sizeHex": "5",
+      "payloadFragment": " text"
+    },
+    {
+      "sizeHex": "a",
+      "payloadFragment": " verifying"
+    },
+    {
+      "sizeHex": "6",
+      "payloadFragment": " chunk"
+    },
+    {
+      "sizeHex": "8",
+      "payloadFragment": " sizing."
+    },
+    {
+      "sizeHex": "b",
+      "payloadFragment": " Additional"
+    },
+    {
+      "sizeHex": "a",
+      "payloadFragment": " narrative"
+    },
+    {
+      "sizeHex": "6",
+      "payloadFragment": " spans"
+    },
+    {
+      "sizeHex": "4",
+      "payloadFragment": " the"
+    },
+    {
+      "sizeHex": "5",
+      "payloadFragment": " rest"
+    },
+    {
+      "sizeHex": "3",
+      "payloadFragment": " to"
+    },
+    {
+      "sizeHex": "6",
+      "payloadFragment": " reach"
+    },
+    {
+      "sizeHex": "6",
+      "payloadFragment": " fifty"
+    },
+    {
+      "sizeHex": "8",
+      "payloadFragment": " pieces."
+    },
+    {
+      "sizeHex": "5",
+      "payloadFragment": " End."
+    },
+    {
+      "sizeHex": "1",
+      "payloadFragment": " "
+    },
+    {
+      "sizeHex": "69",
+      "payloadFragment": "This overarching sentence extends beyond the modest threshold to verify chunk length handling gracefully."
+    }
+  ],
+  "encoded": "1\r\nA\r\n7\r\n sample\r\n3\r\n of\r\n8\r\n chunked\r\n9\r\n encoding\r\n4\r\n for\r\na\r\n streaming\r\n9\r\n decoders\r\n4\r\n who\r\n5\r\n need\r\n3\r\n to\r\n5\r\n stay\r\na\r\n resilient\r\n6\r\n along\r\n4\r\n the\r\n5\r\n path\r\n3\r\n to\r\na\r\n real-time\r\nd\r\n diagnostics.\r\na\r\n Carefully\r\n9\r\n measured\r\na\r\n fragments\r\n7\r\n travel\r\n8\r\n through\r\n7\r\n memory\r\n9\r\n buffers.\r\na\r\n Observers\r\nb\r\n scrutinize\r\n5\r\n each\r\n9\r\n boundary\r\n9\r\n watching\r\n4\r\n for\r\n6\r\n stray\r\n4\r\n CR\r\r\nb\r\n sequences.\r\n4\r\n LF\n\r\na\r\n detection\r\n6\r\n keeps\r\n7\r\n things\r\n6\r\n safe.\r\n7\r\n Resend\r\n8\r\n events.\r\n7\r\n CRLF\r\n\r\na\r\n sequences\r\n7\r\n ensure\r\n9\r\n protocol\r\na\r\n accuracy.\r\n2\r\n A\r\n5\r\n dash\r\n3\r\n of\r\n8\r\n latency\r\na\r\n awareness\r\nb\r\n safeguards\r\n4\r\n the\r\n6\r\n flow.\r\n7\r\n Bright\r\n5\r\n logs\r\n4\r\n and\r\n9\r\n metadata\r\n6\r\n guide\r\n4\r\n the\r\n9\r\n journey.\r\n5\r\n This\r\n7\r\n design\r\n9\r\n includes\r\n2\r\n a\r\n7\r\n single\r\n5\r\n byte\r\n6\r\n probe\r\n2\r\n Y\r\n5\r\n plus\r\n2\r\n a\r\n7\r\n longer\r\n4\r\n run\r\n3\r\n of\r\n5\r\n text\r\na\r\n verifying\r\n6\r\n chunk\r\n8\r\n sizing.\r\nb\r\n Additional\r\na\r\n narrative\r\n6\r\n spans\r\n4\r\n the\r\n5\r\n rest\r\n3\r\n to\r\n6\r\n reach\r\n6\r\n fifty\r\n8\r\n pieces.\r\n5\r\n End.\r\n1\r\n \r\n69\r\nThis overarching sentence extends beyond the modest threshold to verify chunk length handling gracefully.\r\n0\r\n\r\n",
+  "fragments": [
+    "1\r\nA\r\n7\r\n sample\r\n3",
+    "\r\n of\r\n8\r\n chunked\r",
+    "\n9\r\n encoding\r\n4\r\n ",
+    "for\r\na\r\n streaming\r",
+    "\n9\r\n decoders\r\n4\r\n ",
+    "who\r\n5\r\n need\r\n3\r\n ",
+    "to\r\n5\r\n stay\r\na\r\n r",
+    "esilient\r\n6\r\n along",
+    "\r\n4\r\n the\r\n5\r\n path",
+    "\r\n3\r\n to\r\na\r\n real-",
+    "time\r\nd\r\n diagnosti",
+    "cs.\r\na\r\n Carefully\r",
+    "\n9\r\n measured\r\na\r\n ",
+    "fragments\r\n7\r\n trav",
+    "el\r\n8\r\n through\r\n7\r",
+    "\n memory\r\n9\r\n buffe",
+    "rs.\r\na\r\n Observers\r",
+    "\nb\r\n scrutinize\r\n5\r",
+    "\n each\r\n9\r\n boundar",
+    "y\r\n9\r\n watching\r\n4\r",
+    "\n for\r\n6\r\n stray\r\n4",
+    "\r\n CR\r\r\nb\r\n sequenc",
+    "es.\r\n4\r\n LF\n\r\na\r\n d",
+    "etection\r\n6\r\n keeps",
+    "\r\n7\r\n things\r\n6\r\n s",
+    "afe.\r\n7\r\n Resend\r\n8",
+    "\r\n events.\r\n7\r\n CRL",
+    "F\r\n\r\na\r\n sequences\r",
+    "\n7\r\n ensure\r\n9\r\n pr",
+    "otocol\r\na\r\n accurac",
+    "y.\r\n2\r\n A\r\n5\r\n dash",
+    "\r\n3\r\n of\r\n8\r\n laten",
+    "cy\r\na\r\n awareness\r\n",
+    "b\r\n safeguards\r\n4\r\n",
+    " the\r\n6\r\n flow.\r\n7\r",
+    "\n Bright\r\n5\r\n logs\r",
+    "\n4\r\n and\r\n9\r\n metad",
+    "ata\r\n6\r\n guide\r\n4\r\n",
+    " the\r\n9\r\n journey.\r",
+    "\n5\r\n This\r\n7\r\n desi",
+    "gn\r\n9\r\n includes\r\n",
+    "2\r\n a\r\n7\r\n single\r",
+    "\n5\r\n byte\r\n6\r\n pro",
+    "be\r\n2\r\n Y\r\n5\r\n plu",
+    "s\r\n2\r\n a\r\n7\r\n long",
+    "er\r\n4\r\n run\r\n3\r\n o",
+    "f\r\n5\r\n text\r\na\r\n v",
+    "erifying\r\n6\r\n chun",
+    "k\r\n8\r\n sizing.\r\nb\r",
+    "\n Additional\r\na\r\n ",
+    "narrative\r\n6\r\n spa",
+    "ns\r\n4\r\n the\r\n5\r\n r",
+    "est\r\n3\r\n to\r\n6\r\n r",
+    "each\r\n6\r\n fifty\r\n8",
+    "\r\n pieces.\r\n5\r\n En",
+    "d.\r\n1\r\n \r\n69\r\nThis",
+    " overarching sente",
+    "nce extends beyond",
+    " the modest thresh",
+    "old to verify chun",
+    "k length handling ",
+    "gracefully.\r\n0\r\n\r\n"
+  ],
+  "payloadSha256Hex": "b2faa335739e761e5a4fcc0001aa29d24657a62b46888faf074398d377264c9a"
+}

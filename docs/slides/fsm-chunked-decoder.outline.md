@@ -150,7 +150,7 @@ Concept-first didactic opening builds FSM intuition, problem statement creates t
 
 ---
 
-### Slide 13: "BlockCollector: Taming String Concatenation"
+### Slide 13: "StringAccumulator: Taming String Concatenation"
 **Concept:** `implementation`
 **Purpose:** Address the output accumulation concern (separate from parsing)
 

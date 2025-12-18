@@ -55,7 +55,7 @@
               },
               {
                 "label": "Convenience output",
-                "value": "CollectingDecoder.result",
+                "value": "ChunkedCollectingDecoder.result",
                 "description": "A wrapper that collects emitted fragments (with a churn-resistant collector) and exposes one final string."
               }
             ]
@@ -78,7 +78,7 @@
             "endLine": 199,
             "language": "ts",
             "highlight": [182, 183, 185, 193, 194, 197],
-            "code": "export class CollectingDecoder {\n  private readonly collector = new BlockCollector();\n  private readonly decoder = new ChunkedDecoder((s) => this.collector.push(s));\n\n  decodeChunk(chunk: string): void {\n    this.decoder.decodeChunk(chunk);\n  }\n\n  finalize(): void {\n    this.decoder.finalize();\n  }\n\n  get result(): string {\n    if (!this.decoder.isDone()) {\n      throw new Error(\"Not finished yet (call finalize() after feeding all chunks).\");\n    }\n    return this.collector.toString();\n  }\n}"
+            "code": "export class ChunkedCollectingDecoder {\n  private readonly accumulator = new StringAccumulator();\n  private readonly decoder = new ChunkedDecoder((s) => this.accumulator.push(s));\n\n  decodeChunk(chunk: string): void {\n    this.decoder.decodeChunk(chunk);\n  }\n\n  finalize(): void {\n    this.decoder.finalize();\n  }\n\n  get result(): string {\n    return this.accumulator.toString();\n  }\n}"
           }
         }
       ]
@@ -260,11 +260,11 @@
             "endLine": 173,
             "language": "ts",
             "highlight": [132, 142, 145, 148, 153, 155, 160, 168, 172],
-            "code": "/**\n * A collector that avoids pathological memory churn when the stream is split into\n * extremely tiny fragments. It groups many small fragments into medium-sized blocks.\n *\n * - Each fragment is stored once in `pending`.\n * - Occasionally, `pending` is joined into a single block string.\n * - At the very end, all blocks are joined to produce one final string.\n *\n * This ensures any character is copied O(1) times: once into a block and once\n * into the final result.\n */\nclass BlockCollector {\n  private blocks: string[] = [];\n  private pending: string[] = [];\n  private pendingChars = 0;\n\n  constructor(\n    private readonly maxPendingChars = 64 * 1024,\n    private readonly maxPendingParts = 2048\n  ) {}\n\n  push(fragment: string): void {\n    if (fragment.length === 0) return;\n\n    this.pending.push(fragment);\n    this.pendingChars += fragment.length;\n\n    if (this.pendingChars >= this.maxPendingChars || this.pending.length >= this.maxPendingParts) {\n      this.flush();\n    }\n  }\n\n  flush(): void {\n    if (this.pending.length === 0) return;\n    this.blocks.push(this.pending.join(\"\"));\n    this.pending = [];\n    this.pendingChars = 0;\n  }\n\n  toString(): string {\n    if (this.blocks.length === 0) {\n      // Avoid one extra join in the common case.\n      if (this.pending.length === 0) return \"\";\n      if (this.pending.length === 1) return this.pending[0];\n      return this.pending.join(\"\");\n    }\n\n    // Flush pending into blocks once, then do a single final join.\n    this.flush();\n\n    if (this.blocks.length === 1) return this.blocks[0];\n    return this.blocks.join(\"\");\n  }\n}"
+            "code": "/**\n * A string accumulator that avoids pathological memory churn when the stream is split into\n * extremely tiny fragments. It groups many small fragments into medium-sized blocks.\n *\n * - Each fragment is stored once in `pending`.\n * - Occasionally, `pending` is joined into a single block string.\n * - At the very end, all blocks are joined to produce one final string.\n *\n * This ensures any character is copied O(1) times: once into a block and once\n * into the final result.\n */\nclass StringAccumulator {\n  private blocks: string[] = [];\n  private pending: string[] = [];\n  private pendingChars = 0;\n\n  constructor(\n    private readonly maxPendingChars = 64 * 1024,\n    private readonly maxPendingParts = 2048\n  ) {}\n\n  push(fragment: string): void {\n    if (fragment.length === 0) return;\n\n    this.pending.push(fragment);\n    this.pendingChars += fragment.length;\n\n    if (this.pendingChars >= this.maxPendingChars || this.pending.length >= this.maxPendingParts) {\n      this.flush();\n    }\n  }\n\n  flush(): void {\n    if (this.pending.length === 0) return;\n    this.blocks.push(this.pending.join(\"\"));\n    this.pending = [];\n    this.pendingChars = 0;\n  }\n\n  toString(): string {\n    if (this.blocks.length === 0) {\n      // Avoid one extra join in the common case.\n      if (this.pending.length === 0) return \"\";\n      if (this.pending.length === 1) return this.pending[0];\n      return this.pending.join(\"\");\n    }\n\n    // Flush pending into blocks once, then do a single final join.\n    this.flush();\n\n    if (this.blocks.length === 1) return this.blocks[0];\n    return this.blocks.join(\"\");\n  }\n}"
           }
         },
         {
-          "explanation": "If the stream is split into tons of tiny fragments, naive `result += fragment` can repeatedly re-copy big strings.\n\n`BlockCollector` amortizes that:\n- collect many small strings in `pending`\n- occasionally `join` them into a medium block\n- do **one** final join at the end"
+          "explanation": "If the stream is split into tons of tiny fragments, naive `result += fragment` can repeatedly re-copy big strings.\n\n`StringAccumulator` amortizes that:\n- collect many small strings in `pending`\n- occasionally `join` them into a medium block\n- do **one** final join at the end"
         }
       ]
     },
@@ -279,11 +279,11 @@
             "endLine": 199,
             "language": "ts",
             "highlight": [182, 183, 185, 189, 193, 194, 197],
-            "code": "export class CollectingDecoder {\n  private readonly collector = new BlockCollector();\n  private readonly decoder = new ChunkedDecoder((s) => this.collector.push(s));\n\n  decodeChunk(chunk: string): void {\n    this.decoder.decodeChunk(chunk);\n  }\n\n  finalize(): void {\n    this.decoder.finalize();\n  }\n\n  get result(): string {\n    if (!this.decoder.isDone()) {\n      throw new Error(\"Not finished yet (call finalize() after feeding all chunks).\");\n    }\n    return this.collector.toString();\n  }\n}"
+            "code": "export class ChunkedCollectingDecoder {\n  private readonly accumulator = new StringAccumulator();\n  private readonly decoder = new ChunkedDecoder((s) => this.accumulator.push(s));\n\n  decodeChunk(chunk: string): void {\n    this.decoder.decodeChunk(chunk);\n  }\n\n  finalize(): void {\n    this.decoder.finalize();\n  }\n\n  get result(): string {\n    return this.accumulator.toString();\n  }\n}"
           }
         },
         {
-          "explanation": "`CollectingDecoder` is intentionally thin:\n- It keeps `ChunkedDecoder` as the single source of truth for correctness\n- It only changes **how output is accumulated**"
+          "explanation": "`ChunkedCollectingDecoder` is intentionally thin:\n- It keeps `ChunkedDecoder` as the single source of truth for correctness\n- It only changes **how output is accumulated**"
         }
       ]
     },
@@ -303,7 +303,7 @@
               {
                 "label": "Outputs",
                 "value": "stream or collect",
-                "description": "Streaming: `onData(payloadFragment)`; Collecting: `CollectingDecoder.result` (only after `finalize()`)."
+                "description": "Streaming: `onData(payloadFragment)`; Collecting: `ChunkedCollectingDecoder.result` (only after `finalize()`)."
               },
               {
                 "label": "Invariants",
@@ -334,7 +334,7 @@
             "endLine": 91,
             "language": "ts",
             "highlight": [35, 39, 46, 58, 70, 80, 86, 90],
-            "code": "describe(\"ChunkedDecoder (simplified)\", () => {\n  it(\"decodes the prompt example\", () => {\n    const encoded =\n      \"7\\r\\nNewtonX\\r\\n\" +\n      \"B\\r\\n is hiring \\r\\n\" +\n      \"8\\r\\nawesome \\r\\n\" +\n      \"9\\r\\nengineers\\r\\n\" +\n      \"0\\r\\n\\r\\n\";\n\n    const frags = fragment(encoded, { type: \"random\", max: 7, seed: 42 });\n    expect(decodeViaCallback(frags)).toBe(\"NewtonX is hiring awesome engineers\");\n    expect(decodeViaCollector(frags)).toBe(\"NewtonX is hiring awesome engineers\");\n  });\n\n  it(\"handles payloads that contain CR/LF/CRLF sequences\", () => {\n    const payload = \"hello\\rworld\\nOK\\r\\nEND\";\n    const { encoded } = encodeChunked(payload, { type: \"fixed\", size: 3 });\n\n    // Very adversarial fragmentation: split after every CR or LF.\n    const frags = fragment(encoded, { type: \"adversarial-crlf\" });\n\n    expect(decodeViaCallback(frags)).toBe(payload);\n    expect(decodeViaCollector(frags)).toBe(payload);\n  });\n\n  it(\"passes randomized chaos tests across fragmentation strategies\", () => {\n    const strategies = [\n      { type: \"single\" } as const,\n      { type: \"fixed\", size: 1 } as const,\n      { type: \"fixed\", size: 2 } as const,\n      { type: \"fixed\", size: 7 } as const,\n      { type: \"fixed\", size: 64 } as const,\n      { type: \"random\", max: 7, seed: 1 } as const,\n      { type: \"random\", max: 64, seed: 2 } as const,\n      { type: \"adversarial-crlf\" } as const,\n    ];\n\n    for (let seed = 1; seed <= 25; seed++) {\n      const payloadLen = 2000 + (seed * 7919) % 6000; // 2k..8k-ish\n      const { payload, encoded } = generateChunkedCase(payloadLen, {\n        payloadSeed: seed,\n        chunkSeed: seed * 1000 + 7,\n        payloadCrlfProbability: 0.02,\n        payloadCrProbability: 0.01,\n        payloadLfProbability: 0.01,\n        randomChunkMin: 1,\n        randomChunkMax: 128,\n      });\n\n      for (const strat of strategies) {\n        const frags = fragment(encoded, strat as any);\n        const out1 = decodeViaCallback(frags);\n        const out2 = decodeViaCollector(frags);\n        expect(out1).toBe(payload);\n        expect(out2).toBe(payload);\n      }\n    }\n  });\n\n  it(\"throws on malformed size-line CRLF\", () => {\n    const bad = \"1\\rX\\r\\nA\\r\\n0\\r\\n\\r\\n\"; // CR not followed by LF in size line\n    const d = new CollectingDecoder();\n    expect(() => d.decodeChunk(bad)).toThrow();\n  });\n\n  it(\"throws if finalize() is called before terminal chunk is read\", () => {\n    const encoded = \"1\\r\\nA\\r\\n\"; // missing 0\\r\\n\\r\\n\n    const d = new CollectingDecoder();\n    d.decodeChunk(encoded);\n    expect(() => d.finalize()).toThrow();\n  });"
+            "code": "describe(\"ChunkedDecoder (simplified)\", () => {\n  it(\"decodes the prompt example\", () => {\n    const encoded =\n      \"7\\r\\nNewtonX\\r\\n\" +\n      \"B\\r\\n is hiring \\r\\n\" +\n      \"8\\r\\nawesome \\r\\n\" +\n      \"9\\r\\nengineers\\r\\n\" +\n      \"0\\r\\n\\r\\n\";\n\n    const frags = fragment(encoded, { type: \"random\", max: 7, seed: 42 });\n    expect(decodeViaCallback(frags)).toBe(\"NewtonX is hiring awesome engineers\");\n    expect(decodeViaCollector(frags)).toBe(\"NewtonX is hiring awesome engineers\");\n  });\n\n  it(\"handles payloads that contain CR/LF/CRLF sequences\", () => {\n    const payload = \"hello\\rworld\\nOK\\r\\nEND\";\n    const { encoded } = encodeChunked(payload, { type: \"fixed\", size: 3 });\n\n    // Very adversarial fragmentation: split after every CR or LF.\n    const frags = fragment(encoded, { type: \"adversarial-crlf\" });\n\n    expect(decodeViaCallback(frags)).toBe(payload);\n    expect(decodeViaCollector(frags)).toBe(payload);\n  });\n\n  it(\"passes randomized chaos tests across fragmentation strategies\", () => {\n    const strategies = [\n      { type: \"single\" } as const,\n      { type: \"fixed\", size: 1 } as const,\n      { type: \"fixed\", size: 2 } as const,\n      { type: \"fixed\", size: 7 } as const,\n      { type: \"fixed\", size: 64 } as const,\n      { type: \"random\", max: 7, seed: 1 } as const,\n      { type: \"random\", max: 64, seed: 2 } as const,\n      { type: \"adversarial-crlf\" } as const,\n    ];\n\n    for (let seed = 1; seed <= 25; seed++) {\n      const payloadLen = 2000 + (seed * 7919) % 6000; // 2k..8k-ish\n      const { payload, encoded } = generateChunkedCase(payloadLen, {\n        payloadSeed: seed,\n        chunkSeed: seed * 1000 + 7,\n        payloadCrlfProbability: 0.02,\n        payloadCrProbability: 0.01,\n        payloadLfProbability: 0.01,\n        randomChunkMin: 1,\n        randomChunkMax: 128,\n      });\n\n      for (const strat of strategies) {\n        const frags = fragment(encoded, strat as any);\n        const out1 = decodeViaCallback(frags);\n        const out2 = decodeViaCollector(frags);\n        expect(out1).toBe(payload);\n        expect(out2).toBe(payload);\n      }\n    }\n  });\n\n  it(\"throws on malformed size-line CRLF\", () => {\n    const bad = \"1\\rX\\r\\nA\\r\\n0\\r\\n\\r\\n\"; // CR not followed by LF in size line\n    const d = new ChunkedCollectingDecoder();\n    expect(() => d.decodeChunk(bad)).toThrow();\n  });\n\n  it(\"throws if finalize() is called before terminal chunk is read\", () => {\n    const encoded = \"1\\r\\nA\\r\\n\"; // missing 0\\r\\n\\r\\n\n    const d = new ChunkedCollectingDecoder();\n    d.decodeChunk(encoded);\n    expect(() => d.finalize()).toThrow();\n  });"
           }
         },
         {
@@ -344,4 +344,3 @@
     }
   ]
 }
-

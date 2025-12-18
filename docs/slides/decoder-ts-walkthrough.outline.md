@@ -11,7 +11,7 @@ Narrative structure: **Alt A (state machine walkthrough)** as the spine, with a 
 - `core`: The `ChunkedDecoder` state machine
 - `states`: State-by-state behavior
 - `fragmentation`: Why fragmentation is hard + how this design handles it
-- `collect`: `CollectingDecoder` + `BlockCollector` memory strategy
+- `collect`: `ChunkedCollectingDecoder` + `StringAccumulator` memory strategy
 - `contract`: External API + invariants + error modes
 - `appendix`: Optional validation via tests
 
@@ -28,8 +28,8 @@ Blocks:
 Purpose: Establish the two “user-facing” entrypoints and why the callback exists.
 Concept: `core`
 Blocks:
-- `layers` (stack): Layers for “Input fragments → ChunkedDecoder (state machine) → onData callback → your sink” and an optional parallel layer “CollectingDecoder → BlockCollector → result string”.
-- `codeBlock`: `src/decoder.ts` lines 1–1 (OnData), and 181–199 (CollectingDecoder) with highlight 181–187 and 193–198.
+- `layers` (stack): Layers for “Input fragments → ChunkedDecoder (state machine) → onData callback → your sink” and an optional parallel layer “ChunkedCollectingDecoder → StringAccumulator → result string”.
+- `codeBlock`: `src/decoder.ts` lines 1–1 (OnData), and 181–199 (ChunkedCollectingDecoder) with highlight 181–187 and 193–198.
 
 ### Slide 3 — The State Machine in One Picture
 Purpose: Provide a mental model for everything that follows.
@@ -92,7 +92,7 @@ Blocks:
 - `codeBlock`: `src/decoder.ts` lines 105–112 (isDone/finalize), highlight 105–112.
 - `explanation`: Notes: must consume `0\r\n\r\n`; `finalize()` is an assertion, not a “flush”.
 
-### Slide 10 — `BlockCollector`: Avoid Death by a Thousand Tiny Strings
+### Slide 10 — `StringAccumulator`: Avoid Death by a Thousand Tiny Strings
 Purpose: Explain the memory/perf rationale of batching tiny fragments before joining.
 Concept: `collect`
 Blocks:
@@ -101,12 +101,12 @@ Blocks:
   - `pending` accumulates fragments; flush joins occasionally
   - `toString()` flushes once then final-joins blocks (bounded copying)
 
-### Slide 11 — `CollectingDecoder`: Convenience Layer over Streaming
-Purpose: Show the thin wrapper and the “result is only valid when done” guard.
+### Slide 11 — `ChunkedCollectingDecoder`: Convenience Layer over Streaming
+Purpose: Show the thin wrapper and how output is accumulated.
 Concept: `collect`
 Blocks:
 - `codeBlock`: `src/decoder.ts` lines 181–199, highlight 182–187 and 193–198.
-- `explanation`: Notes: still uses streaming internally; `result` throws until terminal chunk read.
+- `explanation`: Notes: still uses streaming internally; `result` returns the accumulated payload (partial results allowed); `finalize()` asserts the terminal chunk was read.
 
 ### Slide 12 — API Contract & Invariants (Vertical Summary)
 Purpose: A single “B-style” slide you can revisit when using/extending the code.
@@ -124,4 +124,3 @@ Concept: `appendix`
 Blocks:
 - `codeBlock`: `tests/decoder.test.ts` lines 21–91, highlight 35–44 and 46–78 and 80–91.
 - `explanation`: Notes: adversarial CR/LF fragmentation; randomized chaos across strategies; malformed cases.
-

@@ -1,43 +1,27 @@
 from __future__ import annotations
 
-import re
 from collections.abc import Callable
-from typing import Literal
 
 OnData = Callable[[str], None]
 
+_STATE_SIZE = 0
+_STATE_PAYLOAD = 1
+_STATE_EXPECT_CRLF = 2
+_STATE_DONE = 3
 
-_HEX_PREFIX_RE = re.compile(r"^[0-9a-fA-F]+")
+_NEXT_SIZE = 0
+_NEXT_DONE = 1
 
 
-def _parse_int_like_js_parse_int_base16(s: str) -> int:
-    """
-    Parse a chunk-size line similarly to `Number.parseInt(str, 16)` in JS:
-    - Trims whitespace.
-    - Accepts optional +/- sign.
-    - Accepts optional 0x/0X prefix.
-    - Parses a leading run of hex digits and ignores the rest.
-
-    Raises ValueError if no valid digits are found.
-    """
-    s = s.strip()
-    if s == "":
-        return 0
-
-    sign = 1
-    if s[0] in "+-":
-        if s[0] == "-":
-            sign = -1
-        s = s[1:]
-
-    if s.startswith(("0x", "0X")):
-        s = s[2:]
-
-    m = _HEX_PREFIX_RE.match(s)
-    if not m:
-        raise ValueError(f"Invalid chunk size: {s!r}")
-
-    return sign * int(m.group(0), 16)
+def _hex_value(c: str) -> int:
+    o = ord(c)
+    if 48 <= o <= 57:  # 0-9
+        return o - 48
+    if 65 <= o <= 70:  # A-F
+        return o - 55
+    if 97 <= o <= 102:  # a-f
+        return o - 87
+    return -1
 
 
 class ChunkedDecoder:
@@ -46,98 +30,130 @@ class ChunkedDecoder:
 
       <hex-size>\\r\\n<payload>\\r\\n ... 0\\r\\n\\r\\n
 
-    Assumptions (matches the prompt examples):
+    Assumptions:
     - Input arrives as Python strings.
     - “Size” counts Python characters (ASCII payload). This is NOT byte-accurate for UTF-8/binary.
     - No chunk extensions (e.g. ";ext=...") and no trailers.
+    - Stream is valid; fragmentation is arbitrary.
     """
+
+    __slots__ = (
+        "_on_data",
+        "_state",
+        "_saw_size_cr",
+        "_size_acc",
+        "_size_any",
+        "_remaining",
+        "_expect_index",
+        "_after_expect",
+    )
 
     def __init__(self, on_data: OnData) -> None:
         self._on_data = on_data
 
-        self._state: Literal["SIZE", "PAYLOAD", "EXPECT_CRLF", "DONE"] = "SIZE"
+        self._state = _STATE_SIZE
 
-        # SIZE parsing (tiny state)
-        self._size_hex = ""
-        self._saw_cr = False
+        # SIZE line parsing: greedy incremental base-16 accumulator.
+        self._saw_size_cr = False
+        self._size_acc = 0
+        self._size_any = False
 
         # PAYLOAD parsing
         self._remaining = 0
 
-        # CRLF expectation parsing
+        # CRLF expectation parsing (after payload or terminal "0\r\n")
         self._expect_index = 0  # 0 => expect '\r', 1 => expect '\n'
-        self._after_expect: Literal["SIZE", "DONE"] = "SIZE"
+        self._after_expect = _NEXT_SIZE
 
     def decode_chunk(self, chunk: str) -> None:
-        if self._state == "DONE":
+        if self._state == _STATE_DONE:
             return
 
         i = 0
-        while i < len(chunk):
-            if self._state == "SIZE":
-                c = chunk[i]
-                i += 1
+        n = len(chunk)
 
-                # We previously consumed a '\r' for the size line,
-                # so the next char MUST be '\n'.
-                if self._saw_cr:
+        while i < n:
+            state = self._state
+
+            if state == _STATE_SIZE:
+                if self._saw_size_cr:
+                    c = chunk[i]
+                    i += 1
+                    # Valid stream assumption; keep a cheap check anyway.
                     if c != "\n":
                         raise ValueError("Invalid chunked encoding: expected LF after CR in size line.")
-                    self._saw_cr = False
 
-                    try:
-                        n = _parse_int_like_js_parse_int_base16(self._size_hex or "0")
-                    except ValueError:
-                        raise ValueError(f'Invalid chunk size: "{self._size_hex}"') from None
+                    self._saw_size_cr = False
 
-                    if n < 0:
-                        raise ValueError(f'Invalid chunk size: "{self._size_hex}"')
+                    size = self._size_acc if self._size_any else 0
+                    self._size_acc = 0
+                    self._size_any = False
 
-                    self._size_hex = ""
-                    self._remaining = n
-
-                    if n == 0:
-                        # Simplified termination: after "0\r\n" we expect the final "\r\n".
-                        self._start_expect_crlf("DONE")
+                    self._remaining = size
+                    if size == 0:
+                        self._start_expect_crlf(_NEXT_DONE)
                     else:
-                        self._state = "PAYLOAD"
+                        self._state = _STATE_PAYLOAD
                     continue
 
-                if c == "\r":
-                    self._saw_cr = True
+                cr = chunk.find("\r", i)
+                end = n if cr == -1 else cr
+
+                acc = self._size_acc
+                any_digit = self._size_any
+
+                for c in chunk[i:end]:
+                    v = _hex_value(c)
+                    if v < 0:
+                        raise ValueError("Invalid chunk size line (expected hex digits).")
+                    acc = (acc << 4) | v
+                    any_digit = True
+
+                self._size_acc = acc
+                self._size_any = any_digit
+
+                i = end
+                if cr != -1:
+                    i += 1
+                    self._saw_size_cr = True
+                continue
+
+            if state == _STATE_PAYLOAD:
+                remaining = self._remaining
+                available = n - i
+
+                if remaining <= available:
+                    if remaining:
+                        self._on_data(chunk[i : i + remaining])
+                        i += remaining
+                    self._remaining = 0
+                    self._start_expect_crlf(_NEXT_SIZE)
+                else:
+                    # Consume the entire fragment, leave the decoder in PAYLOAD state.
+                    self._on_data(chunk[i:])
+                    self._remaining = remaining - available
+                    return
+                continue
+
+            if state == _STATE_EXPECT_CRLF:
+                # Fast path when both delimiter characters are available in this fragment.
+                if self._expect_index == 0 and i + 2 <= n and chunk[i : i + 2] == "\r\n":
+                    i += 2
+                    self._finish_expect_crlf()
+                    if self._state == _STATE_DONE:
+                        return
                     continue
 
-                # Assumption: valid stream, no extensions. Collect the size line verbatim until CR.
-                self._size_hex += c
-                continue
-
-            if self._state == "PAYLOAD":
-                available = len(chunk) - i
-                take = min(self._remaining, available)
-
-                if take > 0:
-                    self._on_data(chunk[i : i + take])
-                    i += take
-                    self._remaining -= take
-
-                if self._remaining == 0:
-                    # After payload there must be a CRLF terminator.
-                    self._start_expect_crlf("SIZE")
-                continue
-
-            if self._state == "EXPECT_CRLF":
                 expected = "\r" if self._expect_index == 0 else "\n"
                 c = chunk[i]
                 i += 1
-
                 if c != expected:
                     raise ValueError("Invalid chunked encoding: expected CRLF.")
 
                 self._expect_index += 1
                 if self._expect_index == 2:
-                    self._expect_index = 0
-                    self._state = "DONE" if self._after_expect == "DONE" else "SIZE"
-                    if self._state == "DONE":
+                    self._finish_expect_crlf()
+                    if self._state == _STATE_DONE:
                         return
                 continue
 
@@ -145,24 +161,25 @@ class ChunkedDecoder:
             return
 
     def is_done(self) -> bool:
-        return self._state == "DONE"
+        return self._state == _STATE_DONE
 
     def finalize(self) -> None:
-        """Throws unless we have consumed a full terminal 0-sized chunk (0\\r\\n\\r\\n)."""
+        """Raises unless we have consumed a full terminal 0-sized chunk (0\\r\\n\\r\\n)."""
         if not self.is_done():
             raise RuntimeError("Chunked stream not finished.")
 
-    def _start_expect_crlf(self, next_state: Literal["SIZE", "DONE"]) -> None:
-        self._state = "EXPECT_CRLF"
+    def _start_expect_crlf(self, next_state: int) -> None:
+        self._state = _STATE_EXPECT_CRLF
         self._expect_index = 0
         self._after_expect = next_state
 
+    def _finish_expect_crlf(self) -> None:
+        self._expect_index = 0
+        self._state = _STATE_DONE if self._after_expect == _NEXT_DONE else _STATE_SIZE
+
 
 class _BlockCollector:
-    """
-    A collector that avoids pathological memory churn when the stream is split into
-    extremely tiny fragments. It groups many small fragments into medium-sized blocks.
-    """
+    __slots__ = ("_blocks", "_pending", "_pending_chars", "_max_pending_chars", "_max_pending_parts")
 
     def __init__(self, max_pending_chars: int = 64 * 1024, max_pending_parts: int = 2048) -> None:
         self._blocks: list[str] = []
@@ -172,7 +189,7 @@ class _BlockCollector:
         self._max_pending_parts = max_pending_parts
 
     def push(self, fragment: str) -> None:
-        if fragment == "":
+        if not fragment:
             return
 
         self._pending.append(fragment)
@@ -190,27 +207,27 @@ class _BlockCollector:
 
     def to_string(self) -> str:
         if not self._blocks:
-            # Avoid one extra join in the common case.
             if not self._pending:
                 return ""
             if len(self._pending) == 1:
                 return self._pending[0]
             return "".join(self._pending)
 
-        # Flush pending into blocks once, then do a single final join.
         self.flush()
-
         if len(self._blocks) == 1:
             return self._blocks[0]
         return "".join(self._blocks)
 
 
-class CollectingDecoder:
+class Decoder:
     """
-    Convenience wrapper matching the “decoder with a result” style.
+    Collecting streaming decoder matching the canonical interface:
 
-    Use ChunkedDecoder directly if you want true streaming output.
+    - `decode_chunk(chunk: str) -> None`
+    - `result` property returns accumulated payload so far
     """
+
+    __slots__ = ("_collector", "_decoder")
 
     def __init__(self) -> None:
         self._collector = _BlockCollector()
@@ -219,11 +236,14 @@ class CollectingDecoder:
     def decode_chunk(self, chunk: str) -> None:
         self._decoder.decode_chunk(chunk)
 
+    @property
+    def result(self) -> str:
+        # Allow partial results, even before the terminal 0-sized chunk is seen.
+        return self._collector.to_string()
+
     def finalize(self) -> None:
         self._decoder.finalize()
 
-    @property
-    def result(self) -> str:
-        # Allow partial results (matches the TS version's current behavior).
-        return self._collector.to_string()
 
+CollectingDecoder = Decoder
+ChunkedCollectingDecoder = Decoder

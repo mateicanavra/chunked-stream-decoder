@@ -15,14 +15,14 @@ export function decodeChunkedPartsRefined(input: string): string[] {
     const rn = input.indexOf("\r\n", i);
     if (rn === -1) throw new Error("Malformed chunked input: missing CRLF after payloadSize"); // We assume the data is standard compliant.
 
-	// 2) Parse payloadSize hex & convert to number
+    // 2) Parse payloadSize hex & convert to number
     const hex = input.slice(i, rn).trim();
     const payloadSize = Number.parseInt(hex, 16);
     if (!Number.isFinite(payloadSize) || payloadSize < 0) throw new Error(`Malformed chunk payloadSize: "${hex}"`);
 
     i = rn + 2; // Got what we needed, move cursor past CRLF delimiter; ready for payload
 
-    // If payload is explicitly "0" ("0\r\n\r\n"), we are done and should exit.
+    // If payload is explicitly "0" ("0\r\n\r\n"), we are done.
     if (payloadSize === 0) {
       if (input.slice(i, i + 2) !== "\r\n") {
         throw new Error("Malformed chunked input: missing final CRLF");
@@ -30,10 +30,10 @@ export function decodeChunkedPartsRefined(input: string): string[] {
       return parts;
     }
 
-	// If remaining chunk is smaller than expected payload, something is wrong.
+    // If remaining chunk is smaller than expected payload, we're missing data.
     if (i + payloadSize > input.length) throw new Error("Malformed chunked input: payload truncated");
-	
-    // 3) Read payload of exactly `payloadSize` length (no need to )
+
+    // 3) Read payload of exactly `payloadSize` length; move cursor past payload
     parts.push(input.slice(i, i + payloadSize));
     i += payloadSize;
 

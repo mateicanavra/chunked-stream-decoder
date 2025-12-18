@@ -12,8 +12,12 @@
   "scripts": {
     "test": "bun test",
     "bench:node": "node --expose-gc ./node_modules/.bin/tsx bench/bench_node.ts",
+    "bench:node:compare": "node --expose-gc ./node_modules/.bin/tsx bench/bench_node_compare.ts",
     "bench:bun": "bun bench/bench_bun.ts",
-    "gen:sample": "bun scripts/gen_sample.ts"
+    "bench:bun:compare": "bun bench/bench_bun_compare.ts",
+    "gen:sample": "bun scripts/gen_sample.ts",
+    "verify:httpbin": "bun scripts/verify_httpbin_real.ts",
+    "decode:url": "bun scripts/decode_url.ts"
   },
   "type": "module"
 }

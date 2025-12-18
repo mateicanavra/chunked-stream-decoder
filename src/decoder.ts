@@ -32,11 +32,13 @@ export class ChunkedDecoder {
     // Cursor into the current chunk
     let i = 0;
     while (i < chunk.length) {
-      // STATE MACHINE
+
+      // STATE: gathering the hex size line
       if (this.state === "SIZE") {
         const c = chunk[i++];
 
-        // We previously consumed a '\r' for the size line, so the next char MUST be '\n'.
+        // If we previously consumed a '\r' for the size line, the next char MUST be '\n'.
+        // 
         if (this.sawCR) {
           if (c !== "\n") throw new Error("Invalid chunked encoding: expected LF after CR in size line.");
           this.sawCR = false;
@@ -56,6 +58,7 @@ export class ChunkedDecoder {
           continue;
         }
 
+        // Found the end of the size line!
         if (c === "\r") {
           this.sawCR = true;
           continue;
@@ -66,6 +69,7 @@ export class ChunkedDecoder {
         continue;
       }
 
+      // STATE: consuming payload by known size
       if (this.state === "PAYLOAD") {
         // Greedily consume payload from the current fragment without buffering.
         const available = chunk.length - i;
@@ -84,6 +88,8 @@ export class ChunkedDecoder {
         continue;
       }
 
+      // STATE: expecting either payload CRLF (1) or final CRLF (2).
+      // Moves either to SIZE (1) or DONE (2) state.
       if (this.state === "EXPECT_CRLF") {
         const expected = this.expectIndex === 0 ? "\r" : "\n";
         const c = chunk[i++];
@@ -121,7 +127,7 @@ export class ChunkedDecoder {
 }
 
 /**
- * A collector that avoids pathological memory churn when the stream is split into
+ * A string accumulator that avoids pathological memory churn when the stream is split into
  * extremely tiny fragments. It groups many small fragments into medium-sized blocks.
  *
  * - Each fragment is stored once in `pending`.
@@ -131,7 +137,7 @@ export class ChunkedDecoder {
  * This ensures any character is copied O(1) times: once into a block and once
  * into the final result.
  */
-class BlockCollector {
+class StringAccumulator {
   private blocks: string[] = [];
   private pending: string[] = [];
   private pendingChars = 0;
@@ -180,9 +186,9 @@ class BlockCollector {
  *
  * Use ChunkedDecoder directly if you want true streaming output.
  */
-export class CollectingDecoder {
-  private readonly collector = new BlockCollector();
-  private readonly decoder = new ChunkedDecoder((s) => this.collector.push(s));
+export class ChunkedCollectingDecoder {
+  private readonly accumulator = new StringAccumulator();
+  private readonly decoder = new ChunkedDecoder((s) => this.accumulator.push(s));
 
   decodeChunk(chunk: string): void {
     this.decoder.decodeChunk(chunk);
@@ -197,6 +203,9 @@ export class CollectingDecoder {
     // if (!this.decoder.isDone()) {
     //   throw new Error("Not finished yet (call finalize() after feeding all chunks).");
     // }
-    return this.collector.toString();
+    return this.accumulator.toString();
   }
 }
+
+// Backwards-compatible alias used by tests/scripts/docs.
+export { ChunkedCollectingDecoder as CollectingDecoder };
