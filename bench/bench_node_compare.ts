@@ -50,14 +50,21 @@ function median(values: number[]): number {
   return v[Math.floor(v.length / 2)];
 }
 
-function benchCase(
+type BenchResult = {
+  ms: number;
+  mibPerSec: number;
+  heapDeltaMiB: number;
+  fragments: number;
+};
+
+function runBench(
   decoderName: string,
   label: string,
   payloadBytes: number,
   bench: BenchCase,
   runOnce: () => void,
   runs = 7
-): void {
+): BenchResult {
   // Warmup
   for (let i = 0; i < 2; i++) runOnce();
 
@@ -78,13 +85,18 @@ function benchCase(
 
   const ms = median(times);
   const mibPerSec = (payloadBytes / (1024 * 1024)) / (ms / 1000);
+  const heapDeltaMiB = mem1 - mem0;
 
+  return { ms, mibPerSec, heapDeltaMiB, fragments: bench.fragments.length };
+}
+
+function printBenchResult(decoderName: string, label: string, bench: BenchCase, r: BenchResult): void {
   console.log(
     `${decoderName} | ${label} :: ${bench.name}
-  median: ${ms.toFixed(2)} ms
-  throughput: ${mibPerSec.toFixed(2)} MiB/s
-  heap delta: ${(mem1 - mem0).toFixed(2)} MiB
-  fragments: ${bench.fragments.length}
+  median: ${r.ms.toFixed(2)} ms
+  throughput: ${r.mibPerSec.toFixed(2)} MiB/s
+  heap delta: ${r.heapDeltaMiB.toFixed(2)} MiB
+  fragments: ${r.fragments}
 `
   );
 }
@@ -192,6 +204,7 @@ function main() {
 
   const skipWorst = envBool("SKIP_WORST_CASES") || hasArg("--skip-worst");
   const benchJoin = !hasArg("--no-join-bench");
+  const horizontal = envBool("HORIZONTAL") || hasArg("--horizontal");
 
   const inputs: InputCase[] = [];
   if (!onlyScenarios) {
@@ -344,8 +357,93 @@ function main() {
     for (const v of variants) {
       if (v.kind !== "batch") continue;
       const b: BenchCase = { name: "full buffer", fragments: [input.encoded] };
-      benchCase(v.name, "consumer=sha256", input.payloadBytes, b, () => v.runHash(input.encoded));
-      benchCase(v.name, "consumer=count", input.payloadBytes, b, () => v.runCount(input.encoded, input.payload.length));
+      if (!horizontal) {
+        printBenchResult(
+          v.name,
+          "consumer=sha256",
+          b,
+          runBench(v.name, "consumer=sha256", input.payloadBytes, b, () => v.runHash(input.encoded))
+        );
+        printBenchResult(
+          v.name,
+          "consumer=count",
+          b,
+          runBench(v.name, "consumer=count", input.payloadBytes, b, () => v.runCount(input.encoded, input.payload.length))
+        );
+      }
+    }
+
+    if (horizontal) {
+      const streaming = variants.filter((v) => v.kind === "streaming") as Extract<
+        DecoderVariant,
+        { kind: "streaming" }
+      >[];
+      const batch = variants.filter((v) => v.kind === "batch") as Extract<DecoderVariant, { kind: "batch" }>[];
+
+      const variantNames = [...streaming.map((v) => v.name), ...batch.map((v) => v.name)];
+      const benchWidth = Math.max("bench".length, ...benches.map((b) => b.name.length), "full buffer".length);
+      const modeWidth = "consumer=sha256".length;
+
+      const formatCell = (r: BenchResult): string =>
+        `${r.ms.toFixed(2)}ms ${r.mibPerSec.toFixed(1)}MiB/s ${r.heapDeltaMiB >= 0 ? "+" : ""}${r.heapDeltaMiB.toFixed(
+          2
+        )}MiB`;
+
+      const exampleCell = formatCell({ ms: 0, mibPerSec: 0, heapDeltaMiB: 0, fragments: 0 });
+      const cellWidth = Math.max("result".length, exampleCell.length, ...variantNames.map((n) => n.length));
+      const colSep = " | ";
+
+      const pad = (s: string, w: number) => (s.length >= w ? s : s + " ".repeat(w - s.length));
+
+      const header =
+        pad("bench", benchWidth) +
+        colSep +
+        pad("mode", modeWidth) +
+        colSep +
+        variantNames.map((n) => pad(n, cellWidth)).join(colSep);
+      console.log(header);
+      console.log("-".repeat(header.length));
+
+      // Batch (in-kind): full-buffer only.
+      for (const mode of ["consumer=sha256", "consumer=count"] as const) {
+        const rowParts: string[] = [];
+        for (const v of batch) {
+          const b: BenchCase = { name: "full buffer", fragments: [input.encoded] };
+          const r =
+            mode === "consumer=sha256"
+              ? runBench(v.name, mode, input.payloadBytes, b, () => v.runHash(input.encoded))
+              : runBench(v.name, mode, input.payloadBytes, b, () => v.runCount(input.encoded, input.payload.length));
+          rowParts.push(pad(formatCell(r), cellWidth));
+        }
+
+        const streamingPlaceholders = streaming.map(() => pad("-", cellWidth));
+        const batchCells = rowParts;
+        const allCells = [...streamingPlaceholders, ...batchCells].join(colSep);
+
+        console.log(pad("full buffer", benchWidth) + colSep + pad(mode, modeWidth) + colSep + allCells);
+      }
+
+      // Streaming: each bench across all streaming variants.
+      for (const b of benches) {
+        for (const mode of ["consumer=sha256", "consumer=count"] as const) {
+          const cells: string[] = [];
+          for (const v of streaming) {
+            const r =
+              mode === "consumer=sha256"
+                ? runBench(v.name, mode, input.payloadBytes, b, () => v.runHash(b.fragments))
+                : runBench(v.name, mode, input.payloadBytes, b, () => v.runCount(b.fragments, input.payload.length));
+            cells.push(pad(formatCell(r), cellWidth));
+          }
+          const batchPlaceholders = batch.map(() => pad("-", cellWidth));
+          console.log(pad(b.name, benchWidth) + colSep + pad(mode, modeWidth) + colSep + [...cells, ...batchPlaceholders].join(colSep));
+        }
+      }
+
+      if (emit) {
+        emitText(`decoded output (expected/oracle) :: ${input.name}`, input.payload, emitLimit, emitAll);
+      }
+
+      continue;
     }
 
     // Streaming decoder: benchmark across fragmentation strategies.
@@ -356,13 +454,28 @@ function main() {
           if (joined !== input.encoded) throw new Error("join mismatch");
         };
         const encodedBytes = Buffer.byteLength(input.encoded, "utf8");
-        benchCase("reassembly", "fragments.join()", encodedBytes, b, runJoin);
+        printBenchResult(
+          "reassembly",
+          "fragments.join()",
+          b,
+          runBench("reassembly", "fragments.join()", encodedBytes, b, runJoin)
+        );
       }
 
       for (const v of variants) {
         if (v.kind !== "streaming") continue;
-        benchCase(v.name, "consumer=sha256", input.payloadBytes, b, () => v.runHash(b.fragments));
-        benchCase(v.name, "consumer=count", input.payloadBytes, b, () => v.runCount(b.fragments, input.payload.length));
+        printBenchResult(
+          v.name,
+          "consumer=sha256",
+          b,
+          runBench(v.name, "consumer=sha256", input.payloadBytes, b, () => v.runHash(b.fragments))
+        );
+        printBenchResult(
+          v.name,
+          "consumer=count",
+          b,
+          runBench(v.name, "consumer=count", input.payloadBytes, b, () => v.runCount(b.fragments, input.payload.length))
+        );
       }
     }
 

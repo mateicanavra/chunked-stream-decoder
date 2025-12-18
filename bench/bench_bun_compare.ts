@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { performance } from "node:perf_hooks";
 
 import { ChunkedDecoder as ChunkedDecoderV1 } from "../src/decoder";
 import { ChunkedDecoder as ChunkedDecoderV2 } from "../src/decoder-v2";
@@ -37,6 +38,28 @@ type DecoderVariant =
 function median(values: number[]): number {
   const v = [...values].sort((a, b) => a - b);
   return v[Math.floor(v.length / 2)];
+}
+
+type BenchResult = {
+  ms: number;
+  mibPerSec: number;
+};
+
+function runBench(payloadBytes: number, runOnce: () => void, runs = 7): BenchResult {
+  for (let i = 0; i < 2; i++) runOnce();
+
+  const times: number[] = [];
+  for (let i = 0; i < runs; i++) {
+    gcIfAvail();
+    const t0 = performance.now();
+    runOnce();
+    const t1 = performance.now();
+    times.push(t1 - t0);
+  }
+
+  const ms = median(times);
+  const mibPerSec = (payloadBytes / (1024 * 1024)) / (ms / 1000);
+  return { ms, mibPerSec };
 }
 
 function envBool(name: string, defaultValue = false): boolean {
@@ -130,6 +153,7 @@ function main() {
   const payloadHash = createHash("sha256").update(payload).digest("hex");
   const skipWorst = envBool("SKIP_WORST_CASES") || hasArg("--skip-worst");
   const benchJoin = !hasArg("--no-join-bench");
+  const horizontal = envBool("HORIZONTAL") || hasArg("--horizontal");
 
   const inputs: InputCase[] = [];
   if (!onlyScenarios) {
@@ -249,62 +273,97 @@ function main() {
 
     const runs = 7;
 
+    if (horizontal) {
+      const streaming = variants.filter((v) => v.kind === "streaming") as Extract<
+        DecoderVariant,
+        { kind: "streaming" }
+      >[];
+      const batch = variants.filter((v) => v.kind === "batch") as Extract<DecoderVariant, { kind: "batch" }>[];
+
+      const variantNames = [...streaming.map((v) => v.name), ...batch.map((v) => v.name)];
+      const benchesPlus = [...benches.map((b) => b.name), "full buffer"];
+      const benchWidth = Math.max("bench".length, ...benchesPlus.map((n) => n.length));
+      const modeWidth = "consumer=sha256".length;
+
+      const formatCell = (r: BenchResult): string => `${r.ms.toFixed(2)}ms ${r.mibPerSec.toFixed(1)}MiB/s`;
+      const exampleCell = formatCell({ ms: 0, mibPerSec: 0 });
+      const cellWidth = Math.max("result".length, exampleCell.length, ...variantNames.map((n) => n.length));
+      const colSep = " | ";
+
+      const pad = (s: string, w: number) => (s.length >= w ? s : s + " ".repeat(w - s.length));
+
+      const header =
+        pad("bench", benchWidth) +
+        colSep +
+        pad("mode", modeWidth) +
+        colSep +
+        variantNames.map((n) => pad(n, cellWidth)).join(colSep);
+      console.log(header);
+      console.log("-".repeat(header.length));
+
+      // Batch (in-kind): full-buffer only.
+      {
+        const mode = "consumer=sha256";
+        const b: BenchCase = { name: "full buffer", fragments: [input.encoded] };
+
+        const streamingPlaceholders = streaming.map(() => pad("-", cellWidth));
+        const batchCells = batch.map((v) => {
+          const r = runBench(input.payloadBytes, () => v.runHash(input.encoded), runs);
+          return pad(formatCell(r), cellWidth);
+        });
+        console.log(
+          pad("full buffer", benchWidth) +
+            colSep +
+            pad(mode, modeWidth) +
+            colSep +
+            [...streamingPlaceholders, ...batchCells].join(colSep)
+        );
+      }
+
+      // Streaming: each bench across all streaming variants.
+      for (const b of benches) {
+        const mode = "consumer=sha256";
+        const cells = streaming.map((v) => {
+          const r = runBench(input.payloadBytes, () => v.runHash(b.fragments), runs);
+          return pad(formatCell(r), cellWidth);
+        });
+        const batchPlaceholders = batch.map(() => pad("-", cellWidth));
+        console.log(pad(b.name, benchWidth) + colSep + pad(mode, modeWidth) + colSep + [...cells, ...batchPlaceholders].join(colSep));
+      }
+
+      if (emit) {
+        emitText(`decoded output (expected/oracle) :: ${input.name}`, input.payload, emitLimit, emitAll);
+      }
+
+      continue;
+    }
+
     // Batch decoders: benchmark on full-buffer input once (in-kind).
     for (const v of variants) {
       if (v.kind !== "batch") continue;
       const b: BenchCase = { name: "full buffer", fragments: [input.encoded] };
-      const times: number[] = [];
-      for (let i = 0; i < 2; i++) v.runHash(input.encoded);
-      for (let i = 0; i < runs; i++) {
-        gcIfAvail();
-        const t0 = performance.now();
-        v.runHash(input.encoded);
-        const t1 = performance.now();
-        times.push(t1 - t0);
-      }
-      const ms = median(times);
-      const mibPerSec = (input.payloadBytes / (1024 * 1024)) / (ms / 1000);
-      console.log(`${v.name} :: ${b.name}\n  median: ${ms.toFixed(2)} ms\n  throughput: ${mibPerSec.toFixed(2)} MiB/s\n`);
+      const r = runBench(input.payloadBytes, () => v.runHash(input.encoded), runs);
+      console.log(`${v.name} :: ${b.name}\n  median: ${r.ms.toFixed(2)} ms\n  throughput: ${r.mibPerSec.toFixed(2)} MiB/s\n`);
     }
 
     // Streaming decoder: benchmark across fragmentation strategies (+ optional join cost).
     for (const b of benches) {
       if (benchJoin && b.fragments.length > 1) {
-        const times: number[] = [];
         const runJoin = () => {
           const joined = b.fragments.join("");
           if (joined !== input.encoded) throw new Error("join mismatch");
         };
-        for (let i = 0; i < 2; i++) runJoin();
-        for (let i = 0; i < runs; i++) {
-          gcIfAvail();
-          const t0 = performance.now();
-          runJoin();
-          const t1 = performance.now();
-          times.push(t1 - t0);
-        }
-        const ms = median(times);
         const encodedBytes = Buffer.byteLength(input.encoded, "utf8");
-        const mibPerSec = (encodedBytes / (1024 * 1024)) / (ms / 1000);
-        console.log(`reassembly :: fragments.join() :: ${b.name}\n  median: ${ms.toFixed(2)} ms\n  throughput: ${mibPerSec.toFixed(2)} MiB/s\n`);
+        const r = runBench(encodedBytes, runJoin, runs);
+        console.log(
+          `reassembly :: fragments.join() :: ${b.name}\n  median: ${r.ms.toFixed(2)} ms\n  throughput: ${r.mibPerSec.toFixed(2)} MiB/s\n`
+        );
       }
 
       for (const v of variants) {
         if (v.kind !== "streaming") continue;
-        const times: number[] = [];
-
-        for (let i = 0; i < 2; i++) v.runHash(b.fragments);
-        for (let i = 0; i < runs; i++) {
-          gcIfAvail();
-          const t0 = performance.now();
-          v.runHash(b.fragments);
-          const t1 = performance.now();
-          times.push(t1 - t0);
-        }
-
-        const ms = median(times);
-        const mibPerSec = (input.payloadBytes / (1024 * 1024)) / (ms / 1000);
-        console.log(`${v.name} :: ${b.name}\n  median: ${ms.toFixed(2)} ms\n  throughput: ${mibPerSec.toFixed(2)} MiB/s\n`);
+        const r = runBench(input.payloadBytes, () => v.runHash(b.fragments), runs);
+        console.log(`${v.name} :: ${b.name}\n  median: ${r.ms.toFixed(2)} ms\n  throughput: ${r.mibPerSec.toFixed(2)} MiB/s\n`);
       }
     }
 
