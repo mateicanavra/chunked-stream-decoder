@@ -1,7 +1,8 @@
 import { createHash } from "node:crypto";
 import { performance } from "node:perf_hooks";
 
-import { ChunkedDecoder } from "../src/decoder";
+import { ChunkedDecoder as ChunkedDecoderV1 } from "../src/decoder";
+import { ChunkedDecoder as ChunkedDecoderV2 } from "../src/decoder-v2";
 import { decodeChunkedStringV01 } from "../src/decoder-01";
 import { decodeChunkedStringRefined } from "../src/decoder-01-refined";
 import { generateChunkedCase } from "../src/generator";
@@ -224,24 +225,51 @@ function main() {
   const variants: DecoderVariant[] = [
     {
       kind: "streaming",
-      name: "ChunkedDecoder (streaming)",
+      name: "ChunkedDecoder v1 (streaming)",
       checkHash(fragments: string[]) {
         const h = createHash("sha256");
-        const d = new ChunkedDecoder((s) => h.update(s));
+        const d = new ChunkedDecoderV1((s) => h.update(s));
         for (const f of fragments) d.decodeChunk(f);
         d.finalize();
         return h.digest("hex");
       },
       runHash(fragments: string[]) {
         const h = createHash("sha256");
-        const d = new ChunkedDecoder((s) => h.update(s));
+        const d = new ChunkedDecoderV1((s) => h.update(s));
         for (const f of fragments) d.decodeChunk(f);
         d.finalize();
         h.digest("hex");
       },
       runCount(fragments: string[], expectedLen: number) {
         let count = 0;
-        const d = new ChunkedDecoder((s) => {
+        const d = new ChunkedDecoderV1((s) => {
+          count += s.length;
+        });
+        for (const f of fragments) d.decodeChunk(f);
+        d.finalize();
+        if (count !== expectedLen) throw new Error(`bad count: ${count} != ${expectedLen}`);
+      },
+    },
+    {
+      kind: "streaming",
+      name: "ChunkedDecoder v2 (streaming, explicit states)",
+      checkHash(fragments: string[]) {
+        const h = createHash("sha256");
+        const d = new ChunkedDecoderV2((s) => h.update(s));
+        for (const f of fragments) d.decodeChunk(f);
+        d.finalize();
+        return h.digest("hex");
+      },
+      runHash(fragments: string[]) {
+        const h = createHash("sha256");
+        const d = new ChunkedDecoderV2((s) => h.update(s));
+        for (const f of fragments) d.decodeChunk(f);
+        d.finalize();
+        h.digest("hex");
+      },
+      runCount(fragments: string[], expectedLen: number) {
+        let count = 0;
+        const d = new ChunkedDecoderV2((s) => {
           count += s.length;
         });
         for (const f of fragments) d.decodeChunk(f);

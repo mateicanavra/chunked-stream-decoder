@@ -1,5 +1,9 @@
 import { describe, it, expect } from "bun:test";
 import { ChunkedDecoder, ChunkedCollectingDecoder } from "../src/decoder";
+import {
+  ChunkedDecoder as ChunkedDecoderV2,
+  ChunkedCollectingDecoder as ChunkedCollectingDecoderV2,
+} from "../src/decoder-v2";
 import { decodeChunkedStringV01 } from "../src/decoder-01";
 import { decodeChunkedStringRefined } from "../src/decoder-01-refined";
 import { runValidInputDecoderTests } from "./decoder.conformance";
@@ -21,6 +25,21 @@ function decodeViaCollector(fragments: string[]): string {
 
 runValidInputDecoderTests("ChunkedDecoder (streaming) via callback", decodeViaCallback);
 runValidInputDecoderTests("ChunkedDecoder (streaming) via collector", decodeViaCollector);
+
+runValidInputDecoderTests("ChunkedDecoder v2 (streaming) via callback", (fragments) => {
+  const parts: string[] = [];
+  const d = new ChunkedDecoderV2((s) => parts.push(s));
+  for (const f of fragments) d.decodeChunk(f);
+  d.finalize();
+  return parts.join("");
+});
+
+runValidInputDecoderTests("ChunkedDecoder v2 (streaming) via collector", (fragments) => {
+  const d = new ChunkedCollectingDecoderV2();
+  for (const f of fragments) d.decodeChunk(f);
+  d.finalize();
+  return d.result;
+});
 
 runValidInputDecoderTests("Decoder v01 (batch, buffer+finalize)", (fragments) =>
   decodeChunkedStringV01(fragments.join(""))
