@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import { ChunkedDecoder } from "../src/decoder";
 import { generateChunkedCase } from "../src/generator";
 import { fragment } from "../src/fragmenter";
+import { printBenchGlossary } from "./glossary";
 
 function gcIfAvail(): void {
   // Bun supports Bun.gc() on some versions. If not, no-op.
@@ -15,6 +16,8 @@ function median(values: number[]): number {
 }
 
 function main() {
+  printBenchGlossary("basic");
+
   const payloadMiB = 32;
   const payloadLen = payloadMiB * 1024 * 1024;
 

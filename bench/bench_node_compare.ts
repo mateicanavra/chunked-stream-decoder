@@ -6,6 +6,13 @@ import { decodeChunkedStringV01 } from "../src/decoder-01";
 import { decodeChunkedStringRefined } from "../src/decoder-01-refined";
 import { generateChunkedCase } from "../src/generator";
 import { fragment } from "../src/fragmenter";
+import { loadScenarioJson, validateAndNormalizeScenario, type LoadedScenario } from "./scenario";
+import { printBenchGlossary } from "./glossary";
+
+// Allow piping to `head`/`sed` without crashing on EPIPE.
+process.stdout.on("error", (err: any) => {
+  if (err?.code === "EPIPE") process.exit(0);
+});
 
 function gcIfAvail(): void {
   // Requires: node --expose-gc ...
@@ -21,12 +28,21 @@ type BenchCase = {
   fragments: string[];
 };
 
-type DecoderVariant = {
-  name: string;
-  runHash: (fragments: string[]) => void;
-  runCount: (fragments: string[], expectedLen: number) => void;
-  checkHash: (fragments: string[]) => string;
-};
+type DecoderVariant =
+  | {
+      kind: "streaming";
+      name: string;
+      checkHash: (fragments: string[]) => string;
+      runHash: (fragments: string[]) => void;
+      runCount: (fragments: string[], expectedLen: number) => void;
+    }
+  | {
+      kind: "batch";
+      name: string;
+      checkHash: (encoded: string) => string;
+      runHash: (encoded: string) => void;
+      runCount: (encoded: string, expectedLen: number) => void;
+    };
 
 function median(values: number[]): number {
   const v = [...values].sort((a, b) => a - b);
@@ -78,7 +94,85 @@ function envBool(name: string, defaultValue = false): boolean {
   return v === "1" || v.toLowerCase() === "true" || v.toLowerCase() === "yes";
 }
 
+function argValues(flag: string): string[] {
+  const out: string[] = [];
+  const argv = process.argv.slice(2);
+  for (let i = 0; i < argv.length; i++) {
+    if (argv[i] === flag) {
+      const v = argv[i + 1];
+      if (!v || v.startsWith("--")) throw new Error(`Missing value after ${flag}`);
+      out.push(v);
+      i++;
+    }
+  }
+  return out;
+}
+
+function hasArg(flag: string): boolean {
+  return process.argv.includes(flag);
+}
+
+function argValue(flag: string): string | null {
+  const argv = process.argv.slice(2);
+  for (let i = 0; i < argv.length; i++) {
+    if (argv[i] === flag) {
+      const v = argv[i + 1];
+      if (!v || v.startsWith("--")) throw new Error(`Missing value after ${flag}`);
+      return v;
+    }
+  }
+  return null;
+}
+
+function emitText(label: string, text: string, limit: number, emitAll: boolean): void {
+  console.log(`\n--- ${label} ---`);
+  const emitEscaped = hasArg("--emit-escaped");
+  const out = emitEscaped ? text.replace(/\r/g, "\\r").replace(/\n/g, "\\n\n") : text;
+
+  if (emitAll || out.length <= limit) {
+    process.stdout.write(out);
+    if (!text.endsWith("\n")) process.stdout.write("\n");
+    return;
+  }
+  process.stdout.write(out.slice(0, limit));
+  process.stdout.write(`\n\n[truncated: ${out.length - limit} chars; re-run with --emit-all]\n`);
+}
+
+type InputCase = {
+  name: string;
+  payload: string;
+  encoded: string;
+  payloadHash: string;
+  payloadBytes: number;
+  fragmentsFromFile: string[] | null;
+};
+
+function buildBenches(encoded: string, fragmentsFromFile: string[] | null, skipWorst: boolean): BenchCase[] {
+  const benches: BenchCase[] = [];
+  benches.push({ name: "single fragment (full buffer)", fragments: fragment(encoded, { type: "single" }) });
+  if (fragmentsFromFile) benches.push({ name: "provided fragments (scenario)", fragments: fragmentsFromFile });
+
+  benches.push({ name: "fixed 64B fragments", fragments: fragment(encoded, { type: "fixed", size: 64 }) });
+  benches.push({ name: "random <= 64B fragments", fragments: fragment(encoded, { type: "random", max: 64, seed: 1 }) });
+  benches.push({ name: "random <= 7B fragments", fragments: fragment(encoded, { type: "random", max: 7, seed: 2 }) });
+
+  if (!skipWorst) {
+    benches.push({ name: "worst-case 1B fragments", fragments: fragment(encoded, { type: "fixed", size: 1 }) });
+    benches.push({ name: "adversarial CR/LF splits", fragments: fragment(encoded, { type: "adversarial-crlf" }) });
+  }
+
+  return benches;
+}
+
 function main() {
+  printBenchGlossary("compare");
+
+  const scenarioPaths = argValues("--scenario");
+  const onlyScenarios = hasArg("--only-scenarios");
+  const emit = hasArg("--emit");
+  const emitAll = hasArg("--emit-all");
+  const emitLimit = Number(argValue("--emit-limit") ?? "4000");
+
   // Keep payload ASCII so “chars == bytes” under the simplified decoders.
   const payloadMiB = Number(process.env.PAYLOAD_MIB ?? 64);
   const payloadLen = payloadMiB * 1024 * 1024;
@@ -95,37 +189,57 @@ function main() {
 
   const payloadHash = createHash("sha256").update(payload).digest("hex");
 
-  const skipWorst = envBool("SKIP_WORST_CASES");
+  const skipWorst = envBool("SKIP_WORST_CASES") || hasArg("--skip-worst");
+  const benchJoin = !hasArg("--no-join-bench");
 
-  const benches: BenchCase[] = [
-    { name: "single fragment", fragments: fragment(encoded, { type: "single" }) },
-    { name: "fixed 64B fragments", fragments: fragment(encoded, { type: "fixed", size: 64 }) },
-    { name: "random <= 64B fragments", fragments: fragment(encoded, { type: "random", max: 64, seed: 1 }) },
-    { name: "random <= 7B fragments", fragments: fragment(encoded, { type: "random", max: 7, seed: 2 }) },
-    ...(skipWorst ? [] : [{ name: "worst-case 1B fragments", fragments: fragment(encoded, { type: "fixed", size: 1 }) }]),
-    ...(skipWorst
-      ? []
-      : [{ name: "adversarial CR/LF splits", fragments: fragment(encoded, { type: "adversarial-crlf" }) }]),
-  ];
+  const inputs: InputCase[] = [];
+  if (!onlyScenarios) {
+    inputs.push({
+      name: `generated (${payloadMiB} MiB payload)`,
+      payload,
+      encoded,
+      payloadHash,
+      payloadBytes: payloadLen,
+      fragmentsFromFile: null,
+    });
+  }
+
+  for (const p of scenarioPaths) {
+    const raw = loadScenarioJson(p);
+    const s: LoadedScenario = validateAndNormalizeScenario(p, raw);
+    inputs.push({
+      name: s.name,
+      payload: s.payload,
+      encoded: s.encoded,
+      payloadHash: s.payloadSha256Hex,
+      payloadBytes: Buffer.byteLength(s.payload, "utf8"),
+      fragmentsFromFile: s.fragmentsFromFile,
+    });
+  }
+
+  if (inputs.length === 0) {
+    throw new Error("No inputs selected. Provide --scenario <file> or remove --only-scenarios.");
+  }
 
   const variants: DecoderVariant[] = [
     {
+      kind: "streaming",
       name: "ChunkedDecoder (streaming)",
-      checkHash(fragments) {
+      checkHash(fragments: string[]) {
         const h = createHash("sha256");
         const d = new ChunkedDecoder((s) => h.update(s));
         for (const f of fragments) d.decodeChunk(f);
         d.finalize();
         return h.digest("hex");
       },
-      runHash(fragments) {
+      runHash(fragments: string[]) {
         const h = createHash("sha256");
         const d = new ChunkedDecoder((s) => h.update(s));
         for (const f of fragments) d.decodeChunk(f);
         d.finalize();
         h.digest("hex");
       },
-      runCount(fragments, expectedLen) {
+      runCount(fragments: string[], expectedLen: number) {
         let count = 0;
         const d = new ChunkedDecoder((s) => {
           count += s.length;
@@ -136,56 +250,98 @@ function main() {
       },
     },
     {
+      kind: "batch",
       name: "decoder-01.ts (batch)",
-      checkHash(fragments) {
-        const decoded = decodeChunkedStringV01(fragments.join(""));
+      checkHash(encoded: string) {
+        const decoded = decodeChunkedStringV01(encoded);
         return createHash("sha256").update(decoded).digest("hex");
       },
-      runHash(fragments) {
-        const decoded = decodeChunkedStringV01(fragments.join(""));
+      runHash(encoded: string) {
+        const decoded = decodeChunkedStringV01(encoded);
         createHash("sha256").update(decoded).digest("hex");
       },
-      runCount(fragments, expectedLen) {
-        const decoded = decodeChunkedStringV01(fragments.join(""));
+      runCount(encoded: string, expectedLen: number) {
+        const decoded = decodeChunkedStringV01(encoded);
         if (decoded.length !== expectedLen) throw new Error(`bad count: ${decoded.length} != ${expectedLen}`);
       },
     },
     {
+      kind: "batch",
       name: "decoder-01-refined.ts (batch)",
-      checkHash(fragments) {
-        const decoded = decodeChunkedStringRefined(fragments.join(""));
+      checkHash(encoded: string) {
+        const decoded = decodeChunkedStringRefined(encoded);
         return createHash("sha256").update(decoded).digest("hex");
       },
-      runHash(fragments) {
-        const decoded = decodeChunkedStringRefined(fragments.join(""));
+      runHash(encoded: string) {
+        const decoded = decodeChunkedStringRefined(encoded);
         createHash("sha256").update(decoded).digest("hex");
       },
-      runCount(fragments, expectedLen) {
-        const decoded = decodeChunkedStringRefined(fragments.join(""));
+      runCount(encoded: string, expectedLen: number) {
+        const decoded = decodeChunkedStringRefined(encoded);
         if (decoded.length !== expectedLen) throw new Error(`bad count: ${decoded.length} != ${expectedLen}`);
       },
     },
   ];
 
-  // Correctness guard: decoders must reproduce payload exactly.
-  for (const b of benches) {
+  for (const input of inputs) {
+    const benches = buildBenches(input.encoded, input.fragmentsFromFile, skipWorst);
+
+    console.log(`\n=== Input: ${input.name} ===`);
+    console.log(`decoded chars: ${input.payload.length}`);
+    console.log(`decoded sha256: ${input.payloadHash}`);
+    console.log(`\nCorrectness checks...`);
+
     for (const v of variants) {
-      const got = v.checkHash(b.fragments);
-      if (got !== payloadHash) {
-        throw new Error(`CORRUPT decode for decoder='${v.name}' bench='${b.name}': ${got} != ${payloadHash}`);
+      if (v.kind === "batch") {
+        const got = v.checkHash(input.encoded);
+        if (got !== input.payloadHash) {
+          throw new Error(`CORRUPT decode for decoder='${v.name}' input='${input.name}': ${got} != ${input.payloadHash}`);
+        }
+        continue;
+      }
+
+      for (const b of benches) {
+        const got = v.checkHash(b.fragments);
+        if (got !== input.payloadHash) {
+          throw new Error(
+            `CORRUPT decode for decoder='${v.name}' input='${input.name}' bench='${b.name}': ${got} != ${input.payloadHash}`
+          );
+        }
       }
     }
-  }
 
-  console.log("All benchmarks passed correctness checks. Running perf...\n");
+    console.log("OK. Running perf...\n");
 
-  for (const b of benches) {
+    // Batch decoders: benchmark on full-buffer input once (in-kind).
     for (const v of variants) {
-      benchCase(v.name, "consumer=sha256", payloadLen, b, () => v.runHash(b.fragments));
-      benchCase(v.name, "consumer=count", payloadLen, b, () => v.runCount(b.fragments, payloadLen));
+      if (v.kind !== "batch") continue;
+      const b: BenchCase = { name: "full buffer", fragments: [input.encoded] };
+      benchCase(v.name, "consumer=sha256", input.payloadBytes, b, () => v.runHash(input.encoded));
+      benchCase(v.name, "consumer=count", input.payloadBytes, b, () => v.runCount(input.encoded, input.payload.length));
+    }
+
+    // Streaming decoder: benchmark across fragmentation strategies.
+    for (const b of benches) {
+      if (benchJoin && b.fragments.length > 1) {
+        const runJoin = () => {
+          const joined = b.fragments.join("");
+          if (joined !== input.encoded) throw new Error("join mismatch");
+        };
+        const encodedBytes = Buffer.byteLength(input.encoded, "utf8");
+        benchCase("reassembly", "fragments.join()", encodedBytes, b, runJoin);
+      }
+
+      for (const v of variants) {
+        if (v.kind !== "streaming") continue;
+        benchCase(v.name, "consumer=sha256", input.payloadBytes, b, () => v.runHash(b.fragments));
+        benchCase(v.name, "consumer=count", input.payloadBytes, b, () => v.runCount(b.fragments, input.payload.length));
+      }
+    }
+
+    if (emit) {
+      emitText(`decoded output (expected/oracle) :: ${input.name}`, input.payload, emitLimit, emitAll);
     }
   }
 }
 
 main();
-

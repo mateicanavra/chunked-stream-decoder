@@ -15,6 +15,10 @@
     "bench:node:compare": "node --expose-gc ./node_modules/.bin/tsx bench/bench_node_compare.ts",
     "bench:bun": "bun bench/bench_bun.ts",
     "bench:bun:compare": "bun bench/bench_bun_compare.ts",
+    "bench:node:samples": "node --expose-gc ./node_modules/.bin/tsx bench/bench_node_compare.ts --only-scenarios --scenario chunked_sample_50.json",
+    "bench:node:samples:emit": "node --expose-gc ./node_modules/.bin/tsx bench/bench_node_compare.ts --only-scenarios --scenario chunked_sample_50.json --emit",
+    "bench:bun:samples": "bun bench/bench_bun_compare.ts --only-scenarios --scenario chunked_sample_50.json",
+    "bench:bun:samples:emit": "bun bench/bench_bun_compare.ts --only-scenarios --scenario chunked_sample_50.json --emit",
     "gen:sample": "bun scripts/gen_sample.ts",
     "verify:httpbin": "bun scripts/verify_httpbin_real.ts",
     "decode:url": "bun scripts/decode_url.ts"

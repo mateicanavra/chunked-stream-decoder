@@ -100,6 +100,18 @@ bun run bench:bun
 bun run bench:bun:compare
 ```
 
+Use `--scenario` to benchmark JSON fixtures (like `chunked_sample_50.json`):
+
+```bash
+bun run bench:bun:compare -- --only-scenarios --scenario chunked_sample_50.json
+```
+
+Print decoded content too:
+
+```bash
+bun run bench:bun:compare -- --only-scenarios --scenario chunked_sample_50.json --emit
+```
+
 ### Node benchmark (better stats + heap delta)
 
 Requires Node and uses `--expose-gc`.
@@ -117,6 +129,12 @@ bun run bench:node:compare
 Both compare benchmarks accept:
 - `PAYLOAD_MIB` (defaults: Node=64, Bun=32)
 - `SKIP_WORST_CASES=1` to skip the extremely fragmented cases
+
+Compare benchmark flags (both Node and Bun):
+- `--scenario <file>` (repeatable) to add JSON fixtures as inputs
+- `--only-scenarios` to skip the generated payload and only run fixtures
+- `--emit` to print decoded output (use `--emit-limit N` / `--emit-all`)
+- `--emit-escaped` to make `\r`/`\n` visible (recommended if your payload contains CR)
 
 ## How to use the decoder
 

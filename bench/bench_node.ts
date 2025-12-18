@@ -4,6 +4,7 @@ import { performance } from "node:perf_hooks";
 import { ChunkedDecoder } from "../src/decoder";
 import { generateChunkedCase } from "../src/generator";
 import { fragment } from "../src/fragmenter";
+import { printBenchGlossary } from "./glossary";
 
 function gcIfAvail(): void {
   // Requires: node --expose-gc ...
@@ -63,6 +64,8 @@ function benchCase(
 }
 
 function main() {
+  printBenchGlossary("basic");
+
   // Keep payload ASCII so “chars == bytes” under the simplified decoder.
   const payloadMiB = 64;
   const payloadLen = payloadMiB * 1024 * 1024;
