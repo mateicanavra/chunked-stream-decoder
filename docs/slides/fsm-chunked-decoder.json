@@ -246,7 +246,7 @@
             },
             {
               "codeBlock": {
-                "file": "src/decoder.ts",
+                "file": "src/core/decoder.ts",
                 "startLine": 29,
                 "endLine": 35,
                 "code": "decodeChunk(chunk: string): void {\n  if (this.state === \"DONE\") return;\n\n  // Cursor into the current chunk\n  let i = 0;\n  while (i < chunk.length) {\n    // STATE MACHINE dispatches here...",
@@ -284,7 +284,7 @@
             },
             {
               "codeBlock": {
-                "file": "src/decoder.ts",
+                "file": "src/core/decoder.ts",
                 "startLine": 36,
                 "endLine": 67,
                 "code": "if (this.state === \"SIZE\") {\n  const c = chunk[i++];\n\n  // We previously consumed a '\\r' for the size line, so the next char MUST be '\\n'.\n  if (this.sawCR) {\n    if (c !== \"\\n\") throw new Error(\"Invalid chunked encoding: expected LF after CR in size line.\");\n    this.sawCR = false;\n\n    const n = Number.parseInt(this.sizeHex.trim() || \"0\", 16);\n    if (!Number.isFinite(n) || n < 0) throw new Error(`Invalid chunk size: \"${this.sizeHex}\"`);\n\n    this.sizeHex = \"\";\n    this.remaining = n;\n\n    if (n === 0) {\n      // Simplified termination: after \"0\\r\\n\" we expect the final \"\\r\\n\".\n      this.startExpectCRLF(\"DONE\");\n    } else {\n      this.state = \"PAYLOAD\";\n    }\n    continue;\n  }\n\n  if (c === \"\\r\") {\n    this.sawCR = true;\n    continue;\n  }\n\n  // Assumption: valid stream, no extensions. Collect the size line verbatim until CR.\n  this.sizeHex += c;\n  continue;\n}",
@@ -314,7 +314,7 @@
             },
             {
               "codeBlock": {
-                "file": "src/decoder.ts",
+                "file": "src/core/decoder.ts",
                 "startLine": 69,
                 "endLine": 85,
                 "code": "if (this.state === \"PAYLOAD\") {\n  // Greedily consume payload from the current fragment without buffering.\n  const available = chunk.length - i;\n  const take = Math.min(this.remaining, available);\n\n  if (take > 0) {\n    this.onData(chunk.slice(i, i + take));\n    i += take;\n    this.remaining -= take;\n  }\n\n  if (this.remaining === 0) {\n    // After payload there must be a CRLF terminator.\n    this.startExpectCRLF(\"SIZE\");\n  }\n  continue;\n}",
@@ -342,7 +342,7 @@
             },
             {
               "codeBlock": {
-                "file": "src/decoder.ts",
+                "file": "src/core/decoder.ts",
                 "startLine": 87,
                 "endLine": 100,
                 "code": "if (this.state === \"EXPECT_CRLF\") {\n  const expected = this.expectIndex === 0 ? \"\\r\" : \"\\n\";\n  const c = chunk[i++];\n\n  if (c !== expected) throw new Error(\"Invalid chunked encoding: expected CRLF.\");\n\n  this.expectIndex++;\n  if (this.expectIndex === 2) {\n    this.expectIndex = 0;\n    this.state = this.afterExpect === \"DONE\" ? \"DONE\" : \"SIZE\";\n    if (this.state === \"DONE\") return;\n  }\n  continue;\n}",
@@ -351,7 +351,7 @@
             },
             {
               "codeBlock": {
-                "file": "src/decoder.ts",
+                "file": "src/core/decoder.ts",
                 "startLine": 116,
                 "endLine": 120,
                 "code": "private startExpectCRLF(next: \"SIZE\" | \"DONE\"): void {\n  this.state = \"EXPECT_CRLF\";\n  this.expectIndex = 0;\n  this.afterExpect = next;\n}",

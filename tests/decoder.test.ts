@@ -1,11 +1,11 @@
 import { describe, it, expect } from "bun:test";
-import { ChunkedDecoder, ChunkedCollectingDecoder } from "../src/decoder";
+import { ChunkedDecoder, ChunkedCollectingDecoder } from "../src/core/decoder";
 import {
   ChunkedDecoder as ChunkedDecoderV2,
   ChunkedCollectingDecoder as ChunkedCollectingDecoderV2,
-} from "../src/decoder-v2";
-import { decodeChunkedStringV01 } from "../src/decoder-01";
-import { decodeChunkedStringRefined } from "../src/decoder-01-refined";
+} from "../src/variants/decoder-v2";
+import { decodeChunkedStringV01 } from "../src/variants/decoder-01";
+import { decodeChunkedStringRefined } from "../src/variants/decoder-01-refined";
 import { runValidInputDecoderTests } from "./decoder.conformance";
 
 function decodeViaCallback(fragments: string[]): string {

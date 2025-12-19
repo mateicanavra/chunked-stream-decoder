@@ -1,12 +1,12 @@
 import { createHash } from "node:crypto";
 import { performance } from "node:perf_hooks";
 
-import { ChunkedDecoder as ChunkedDecoderV1 } from "../src/decoder";
-import { ChunkedDecoder as ChunkedDecoderV2 } from "../src/decoder-v2";
-import { decodeChunkedStringV01 } from "../src/decoder-01";
-import { decodeChunkedStringRefined } from "../src/decoder-01-refined";
-import { generateChunkedCase } from "../src/generator";
-import { fragment } from "../src/fragmenter";
+import { ChunkedDecoder as ChunkedDecoderV1 } from "../src/core/decoder";
+import { ChunkedDecoder as ChunkedDecoderV2 } from "../src/variants/decoder-v2";
+import { decodeChunkedStringV01 } from "../src/variants/decoder-01";
+import { decodeChunkedStringRefined } from "../src/variants/decoder-01-refined";
+import { generateChunkedCase } from "../src/core/generator";
+import { fragment } from "../src/core/fragmenter";
 import { loadScenarioJson, validateAndNormalizeScenario, type LoadedScenario } from "./scenario";
 import { printBenchGlossary } from "./glossary";
 

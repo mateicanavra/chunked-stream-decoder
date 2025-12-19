@@ -1,6 +1,6 @@
 {
   "id": "decoder-ts-walkthrough",
-  "title": "How `src/decoder.ts` Works: Streaming Chunked Decoder (String-based)",
+  "title": "How `src/core/decoder.ts` Works: Streaming Chunked Decoder (String-based)",
   "concepts": {
     "format": { "label": "Wire Format", "color": "blue" },
     "core": { "label": "Core Decoder", "color": "purple" },
@@ -20,7 +20,7 @@
         },
         {
           "codeBlock": {
-            "file": "src/decoder.ts",
+            "file": "src/core/decoder.ts",
             "startLine": 3,
             "endLine": 12,
             "language": "ts",
@@ -63,7 +63,7 @@
         },
         {
           "codeBlock": {
-            "file": "src/decoder.ts",
+            "file": "src/core/decoder.ts",
             "startLine": 1,
             "endLine": 1,
             "language": "ts",
@@ -73,7 +73,7 @@
         },
         {
           "codeBlock": {
-            "file": "src/decoder.ts",
+            "file": "src/core/decoder.ts",
             "startLine": 181,
             "endLine": 199,
             "language": "ts",
@@ -95,7 +95,7 @@
         },
         {
           "codeBlock": {
-            "file": "src/decoder.ts",
+            "file": "src/core/decoder.ts",
             "startLine": 13,
             "endLine": 26,
             "language": "ts",
@@ -114,7 +114,7 @@
       "blocks": [
         {
           "codeBlock": {
-            "file": "src/decoder.ts",
+            "file": "src/core/decoder.ts",
             "startLine": 29,
             "endLine": 34,
             "language": "ts",
@@ -133,7 +133,7 @@
       "blocks": [
         {
           "codeBlock": {
-            "file": "src/decoder.ts",
+            "file": "src/core/decoder.ts",
             "startLine": 34,
             "endLine": 65,
             "language": "ts",
@@ -152,7 +152,7 @@
       "blocks": [
         {
           "codeBlock": {
-            "file": "src/decoder.ts",
+            "file": "src/core/decoder.ts",
             "startLine": 67,
             "endLine": 83,
             "language": "ts",
@@ -171,7 +171,7 @@
       "blocks": [
         {
           "codeBlock": {
-            "file": "src/decoder.ts",
+            "file": "src/core/decoder.ts",
             "startLine": 85,
             "endLine": 98,
             "language": "ts",
@@ -181,7 +181,7 @@
         },
         {
           "codeBlock": {
-            "file": "src/decoder.ts",
+            "file": "src/core/decoder.ts",
             "startLine": 114,
             "endLine": 118,
             "language": "ts",
@@ -226,7 +226,7 @@
       "blocks": [
         {
           "codeBlock": {
-            "file": "src/decoder.ts",
+            "file": "src/core/decoder.ts",
             "startLine": 46,
             "endLine": 54,
             "language": "ts",
@@ -236,7 +236,7 @@
         },
         {
           "codeBlock": {
-            "file": "src/decoder.ts",
+            "file": "src/core/decoder.ts",
             "startLine": 105,
             "endLine": 112,
             "language": "ts",
@@ -255,7 +255,7 @@
       "blocks": [
         {
           "codeBlock": {
-            "file": "src/decoder.ts",
+            "file": "src/core/decoder.ts",
             "startLine": 121,
             "endLine": 173,
             "language": "ts",
@@ -274,7 +274,7 @@
       "blocks": [
         {
           "codeBlock": {
-            "file": "src/decoder.ts",
+            "file": "src/core/decoder.ts",
             "startLine": 181,
             "endLine": 199,
             "language": "ts",

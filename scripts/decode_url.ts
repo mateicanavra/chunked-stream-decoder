@@ -2,10 +2,10 @@ import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { writeFileSync } from "node:fs";
 
-import { ChunkedDecoder, CollectingDecoder } from "../src/decoder";
-import { decodeChunkedStringV01 } from "../src/decoder-01";
-import { decodeChunkedStringRefined } from "../src/decoder-01-refined";
-import { fragment } from "../src/fragmenter";
+import { ChunkedDecoder, CollectingDecoder } from "../src/core/decoder";
+import { decodeChunkedStringV01 } from "../src/variants/decoder-01";
+import { decodeChunkedStringRefined } from "../src/variants/decoder-01-refined";
+import { fragment } from "../src/core/fragmenter";
 
 type FragmentationEnv =
   | { type: "single" }

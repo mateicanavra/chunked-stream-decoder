@@ -3,7 +3,7 @@
 //! Framing:
 //!   `<hex-size>\r\n<payload>\r\n ... 0\r\n\r\n`
 //!
-//! Matches the TypeScript version (`src/decoder.ts`):
+//! Matches the TypeScript version (`src/core/decoder.ts`):
 //! - Input is provided as text fragments (`&str`), assumed to be ASCII.
 //! - Chunk size counts characters (ASCII => 1 char == 1 byte).
 //! - No chunk extensions and no trailers.

@@ -1,9 +1,9 @@
 import { createHash } from "node:crypto";
 import { performance } from "node:perf_hooks";
 
-import { ChunkedDecoder } from "../src/decoder";
-import { generateChunkedCase } from "../src/generator";
-import { fragment } from "../src/fragmenter";
+import { ChunkedDecoder } from "../src/core/decoder";
+import { generateChunkedCase } from "../src/core/generator";
+import { fragment } from "../src/core/fragmenter";
 import { printBenchGlossary } from "./glossary";
 
 function gcIfAvail(): void {

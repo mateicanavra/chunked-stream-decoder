@@ -26,7 +26,9 @@ export function printBenchGlossary(kind: "basic" | "compare"): void {
     lines.push("Flags:");
     lines.push("- SKIP_WORST_CASES=1 or --skip-worst: skip the worst-case 1B fragmentation.");
     lines.push("- HORIZONTAL=1 or --horizontal: print one row per bench/consumer with decoders side-by-side.");
-    lines.push("- --scenario <file> / --only-scenarios: add JSON fixtures as inputs (e.g. chunked_sample_50.json).");
+    lines.push(
+      "- --scenario <file> / --only-scenarios: add JSON fixtures as inputs (e.g. fixtures/chunked_sample_50.json)."
+    );
     lines.push("- --emit / --emit-limit N / --emit-all: print expected decoded output.");
     lines.push("- --emit-escaped: render \\r/\\n visibly to avoid terminal overwrite artifacts.");
   }

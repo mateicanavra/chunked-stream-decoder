@@ -1,10 +1,10 @@
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
 
-import { ChunkedCollectingDecoder } from "../src/decoder";
-import { decodeChunkedStringV01 } from "../src/decoder-01";
-import { decodeChunkedStringRefined } from "../src/decoder-01-refined";
-import { fragment } from "../src/fragmenter";
+import { ChunkedCollectingDecoder } from "../src/core/decoder";
+import { decodeChunkedStringV01 } from "../src/variants/decoder-01";
+import { decodeChunkedStringRefined } from "../src/variants/decoder-01-refined";
+import { fragment } from "../src/core/fragmenter";
 
 function runCurl(args: string[]): Buffer {
   const res = spawnSync("curl", args, { stdio: ["ignore", "pipe", "pipe"] });

@@ -8,12 +8,14 @@ A minimal (but complete) repo for a **streaming** decoder for a simplified “HT
 
 ## What this repo includes
 
-- `src/decoder.ts`
+- `src/core/decoder.ts`
   - `ChunkedDecoder`: streaming decoder that emits payload via callback (no mega-buffer).
   - `ChunkedCollectingDecoder`: small wrapper that collects output and exposes `result`.
-- `src/generator.ts`: diverse, deterministic chunked encoder + ASCII payload generator (with optional CR/LF/CRLF inside payload).
-- `src/fragmenter.ts`: fixed/random/adversarial fragmentation helpers (simulate streaming boundaries).
+- `src/core/generator.ts`: diverse, deterministic chunked encoder + ASCII payload generator (with optional CR/LF/CRLF inside payload).
+- `src/core/fragmenter.ts`: fixed/random/adversarial fragmentation helpers (simulate streaming boundaries).
+- `src/variants/*`: older/alternate decoders used for comparisons.
 - `tests/decoder.test.ts`: Bun tests (including randomized “chaos” tests).
+- `fixtures/chunked_sample_50.json`: sample scenario fixture for compare benchmarks/tests.
 - `bench/bench_node.ts`: Node benchmark with throughput + heap delta (recommended).
 - `bench/bench_bun.ts`: Bun benchmark (approximate timing).
 
@@ -27,7 +29,7 @@ This is intentionally aligned to the original problem-set framing using **string
 
 If you want spec-correct byte semantics, you’d implement the same state machine on `Uint8Array`/`Buffer`.
 
-This repo now also includes byte-accurate decoders in `src/decoder.ts`:
+This repo now also includes byte-accurate decoders in `src/core/decoder.ts`:
 - `ByteChunkedDecoder` / `ByteCollectingDecoder` (payload as `Uint8Array`)
 - `Utf8CollectingDecoder` (payload decoded as UTF-8 text via streaming `TextDecoder`)
 
@@ -100,16 +102,16 @@ bun run bench:bun
 bun run bench:bun:compare
 ```
 
-Use `--scenario` to benchmark JSON fixtures (like `chunked_sample_50.json`):
+Use `--scenario` to benchmark JSON fixtures (like `fixtures/chunked_sample_50.json`):
 
 ```bash
-bun run bench:bun:compare -- --only-scenarios --scenario chunked_sample_50.json
+bun run bench:bun:compare -- --only-scenarios --scenario fixtures/chunked_sample_50.json
 ```
 
 Print decoded content too:
 
 ```bash
-bun run bench:bun:compare -- --only-scenarios --scenario chunked_sample_50.json --emit
+bun run bench:bun:compare -- --only-scenarios --scenario fixtures/chunked_sample_50.json --emit
 ```
 
 ### Node benchmark (better stats + heap delta)
@@ -141,7 +143,7 @@ Compare benchmark flags (both Node and Bun):
 ### True streaming (minimal memory)
 
 ```ts
-import { ChunkedDecoder } from "./src/decoder";
+import { ChunkedDecoder } from "./src/core/decoder";
 
 let count = 0;
 const d = new ChunkedDecoder((fragment) => {
@@ -160,7 +162,7 @@ console.log(count);
 ### Collecting output (convenience)
 
 ```ts
-import { ChunkedCollectingDecoder } from "./src/decoder";
+import { ChunkedCollectingDecoder } from "./src/core/decoder";
 
 const d = new ChunkedCollectingDecoder();
 for (const frag of fragments) d.decodeChunk(frag);
@@ -172,7 +174,7 @@ console.log(d.result);
 ### Byte-accurate (real HTTP chunked)
 
 ```ts
-import { Utf8CollectingDecoder } from "./src/decoder";
+import { Utf8CollectingDecoder } from "./src/core/decoder";
 
 const d = new Utf8CollectingDecoder();
 for await (const chunk of someReadableStream) d.decodeChunk(chunk); // chunk: Uint8Array

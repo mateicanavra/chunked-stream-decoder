@@ -1,6 +1,6 @@
 import { describe, it, expect } from "bun:test";
-import { generateChunkedCase, encodeChunked } from "../src/generator";
-import { fragment } from "../src/fragmenter";
+import { generateChunkedCase, encodeChunked } from "../src/core/generator";
+import { fragment } from "../src/core/fragmenter";
 
 export type DecodeFromFragments = (fragments: string[]) => string;
 

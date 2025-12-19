@@ -1,6 +1,6 @@
-import { ChunkedCollectingDecoder } from "../src/decoder";
-import { generateChunkedCase } from "../src/generator";
-import { fragment } from "../src/fragmenter";
+import { ChunkedCollectingDecoder } from "../src/core/decoder";
+import { generateChunkedCase } from "../src/core/generator";
+import { fragment } from "../src/core/fragmenter";
 
 const { payload, encoded, chunks } = generateChunkedCase(120, {
   payloadSeed: 42,
