@@ -21,6 +21,7 @@ export function printBenchGlossary(kind: "basic" | "compare"): void {
     lines.push("- Batch decoders (decoder-01*) are benchmarked on full-buffer input only (in-kind).");
     lines.push("- Streaming decoder is benchmarked across fragmentations.");
     lines.push("- reassembly | fragments.join(): measures the cost to join fragments back into a full buffer (reported separately).");
+    lines.push("- Node memory deltas show heap delta (H) and external+arrayBuffers delta (E).");
     lines.push("");
     lines.push("Flags:");
     lines.push("- SKIP_WORST_CASES=1 or --skip-worst: skip the worst-case 1B fragmentation.");

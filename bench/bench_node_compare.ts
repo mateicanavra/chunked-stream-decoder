@@ -20,8 +20,22 @@ function gcIfAvail(): void {
   (globalThis as any).gc?.();
 }
 
-function heapUsedMiB(): number {
-  return process.memoryUsage().heapUsed / (1024 * 1024);
+function gcBarrier(): void {
+  // Double GC reduces noise from deferred sweeping/finalizers.
+  gcIfAvail();
+  gcIfAvail();
+}
+
+type MemSample = {
+  heapUsedMiB: number;
+  extAndArrayMiB: number;
+};
+
+function memoryUsageMiB(): MemSample {
+  const mem = process.memoryUsage();
+  const heapUsedMiB = mem.heapUsed / (1024 * 1024);
+  const extAndArrayMiB = (mem.external + mem.arrayBuffers) / (1024 * 1024);
+  return { heapUsedMiB, extAndArrayMiB };
 }
 
 type BenchCase = {
@@ -54,6 +68,7 @@ type BenchResult = {
   ms: number;
   mibPerSec: number;
   heapDeltaMiB: number;
+  extDeltaMiB: number;
   fragments: number;
 };
 
@@ -68,8 +83,8 @@ function runBench(
   // Warmup
   for (let i = 0; i < 2; i++) runOnce();
 
-  gcIfAvail();
-  const mem0 = heapUsedMiB();
+  gcBarrier();
+  const mem0 = memoryUsageMiB();
 
   const times: number[] = [];
   for (let i = 0; i < runs; i++) {
@@ -80,14 +95,15 @@ function runBench(
     times.push(t1 - t0);
   }
 
-  gcIfAvail();
-  const mem1 = heapUsedMiB();
+  gcBarrier();
+  const mem1 = memoryUsageMiB();
 
   const ms = median(times);
   const mibPerSec = (payloadBytes / (1024 * 1024)) / (ms / 1000);
-  const heapDeltaMiB = mem1 - mem0;
+  const heapDeltaMiB = mem1.heapUsedMiB - mem0.heapUsedMiB;
+  const extDeltaMiB = mem1.extAndArrayMiB - mem0.extAndArrayMiB;
 
-  return { ms, mibPerSec, heapDeltaMiB, fragments: bench.fragments.length };
+  return { ms, mibPerSec, heapDeltaMiB, extDeltaMiB, fragments: bench.fragments.length };
 }
 
 function printBenchResult(decoderName: string, label: string, bench: BenchCase, r: BenchResult): void {
@@ -96,6 +112,7 @@ function printBenchResult(decoderName: string, label: string, bench: BenchCase, 
   median: ${r.ms.toFixed(2)} ms
   throughput: ${r.mibPerSec.toFixed(2)} MiB/s
   heap delta: ${r.heapDeltaMiB.toFixed(2)} MiB
+  ext+ab delta: ${r.extDeltaMiB.toFixed(2)} MiB
   fragments: ${r.fragments}
 `
   );
@@ -384,12 +401,13 @@ function main() {
       const benchWidth = Math.max("bench".length, ...benches.map((b) => b.name.length), "full buffer".length);
       const modeWidth = "consumer=sha256".length;
 
+      const formatDelta = (v: number) => `${v >= 0 ? "+" : ""}${v.toFixed(2)}`;
       const formatCell = (r: BenchResult): string =>
-        `${r.ms.toFixed(2)}ms ${r.mibPerSec.toFixed(1)}MiB/s ${r.heapDeltaMiB >= 0 ? "+" : ""}${r.heapDeltaMiB.toFixed(
-          2
-        )}MiB`;
+        `${r.ms.toFixed(2)}ms ${r.mibPerSec.toFixed(1)}MiB/s H${formatDelta(r.heapDeltaMiB)} E${formatDelta(
+          r.extDeltaMiB
+        )}`;
 
-      const exampleCell = formatCell({ ms: 0, mibPerSec: 0, heapDeltaMiB: 0, fragments: 0 });
+      const exampleCell = formatCell({ ms: 0, mibPerSec: 0, heapDeltaMiB: 0, extDeltaMiB: 0, fragments: 0 });
       const cellWidth = Math.max("result".length, exampleCell.length, ...variantNames.map((n) => n.length));
       const colSep = " | ";
 
